@@ -1,0 +1,50 @@
+service: pomodorify
+
+provider:
+  name: aws
+  runtime: python3.12
+  region: us-west-1
+  stage: ${opt:stage, 'dev'}
+  environment:
+    SPOTIFY_CLIENT_ID: ${ssm:/pomodorify/${self:provider.stage}/SPOTIFY_CLIENT_ID}
+    SPOTIFY_CLIENT_SECRET: ${ssm:/pomodorify/${self:provider.stage}/SPOTIFY_CLIENT_SECRET}
+    SPOTIFY_REDIRECT_URI: ${ssm:/pomodorify/${self:provider.stage}/SPOTIFY_REDIRECT_URI}
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - ssm:GetParameter
+            - ssm:GetParameters
+            - ssm:GetParametersByPath
+          Resource:
+            - arn:aws:ssm:${self:provider.region}:*:parameter/pomodorify/${self:provider.stage}/*
+        - Effect: Allow
+          Action:
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+          Resource: 
+            - 'arn:aws:logs:${self:provider.region}:*:log-group:/aws/lambda/*'
+
+functions:
+  api:
+    handler: backend/wsgi_handler.handler
+    events:
+      - http:
+          path: /{proxy+}
+          method: any
+          cors: true
+    package:
+      artifact: deployment.zip
+
+custom:
+  wsgi:
+    app: backend/handler.app
+    packRequirements: false
+
+plugins:
+  - serverless-wsgi
+
+package:
+  individually: true

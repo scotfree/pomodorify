@@ -3,6 +3,7 @@ from aws_cdk import (
     aws_lambda as _lambda,
     aws_apigateway as apigw,
     aws_iam as iam,
+    aws_logs as logs,
 )
 from constructs import Construct
 
@@ -20,7 +21,9 @@ class PomodorifyStack(Stack):
                 "SPOTIFY_CLIENT_ID_PARAM": "/pomodorify/dev/SPOTIFY_CLIENT_ID",
                 "SPOTIFY_CLIENT_SECRET_PARAM": "/pomodorify/dev/SPOTIFY_CLIENT_SECRET",
                 "SPOTIFY_REDIRECT_URI_PARAM": "/pomodorify/dev/SPOTIFY_REDIRECT_URI",
-            }
+            },
+            log_retention=logs.RetentionDays.ONE_WEEK,
+            tracing=_lambda.Tracing.ACTIVE
         )
 
         # Grant Lambda permissions to access SSM parameters
@@ -59,6 +62,10 @@ class PomodorifyStack(Stack):
             default_cors_preflight_options=apigw.CorsOptions(
                 allow_origins=apigw.Cors.ALL_ORIGINS,
                 allow_methods=apigw.Cors.ALL_METHODS
+            ),
+            deploy_options=apigw.StageOptions(
+                logging_level=apigw.MethodLoggingLevel.INFO,
+                data_trace_enabled=True
             )
         )
 

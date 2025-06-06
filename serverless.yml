@@ -37,6 +37,22 @@ functions:
           path: /{proxy+}
           method: any
           cors: true
+    package:
+      patterns:
+        - '!venv/**'
+        - '!__pycache__/**'
+        - '!.git/**'
+        - '!.env'
+        - '!.gitignore'
+        - '!README.md'
+        - '!node_modules/**'
+        - '!package*.json'
+        - '!serverless.yml'
+        - '!deployment.zip'
+        - 'backend/**'
+        - 'requirements.txt'
+        - 'wsgi_handler.py'
+        - 'venv/lib/python3.9/site-packages/markupsafe/**'
 
 custom:
   wsgi:
@@ -48,17 +64,4 @@ custom:
 
 plugins:
   - serverless-wsgi
-
-package:
-  patterns:
-    - '!venv/**'
-    - '!__pycache__/**'
-    - '!.git/**'
-    - '!.env'
-    - '!.gitignore'
-    - '!README.md'
-    - '!node_modules/**'
-    - '!package*.json'
-    - '!serverless.yml'
-    - '!deployment.zip'
 

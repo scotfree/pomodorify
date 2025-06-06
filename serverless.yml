@@ -42,7 +42,7 @@ custom:
   wsgi:
     app: backend.handler.app
     packRequirements: true
-    pythonBin: python3.10
+    pythonBin: python3.9
     useRequirements: true
     dockerizePip: true
 
@@ -61,3 +61,4 @@ package:
     - '!package*.json'
     - '!serverless.yml'
     - '!deployment.zip'
+

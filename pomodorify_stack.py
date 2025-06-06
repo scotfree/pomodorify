@@ -54,15 +54,6 @@ class PomodorifyStack(Stack):
             )
         )
 
-        # Create CloudWatch Logs role for API Gateway
-        api_gateway_logs_role = iam.Role(
-            self, "ApiGatewayLogsRole",
-            assumed_by=iam.ServicePrincipal("apigateway.amazonaws.com"),
-            managed_policies=[
-                iam.ManagedPolicy.from_aws_managed_policy_name("service-role/AmazonAPIGatewayPushToCloudWatchLogs")
-            ]
-        )
-
         # Create API Gateway
         api = apigw.RestApi(
             self, "PomodorifyApi",
@@ -72,7 +63,7 @@ class PomodorifyStack(Stack):
                 allow_origins=apigw.Cors.ALL_ORIGINS,
                 allow_methods=apigw.Cors.ALL_METHODS
             ),
-            cloud_watch_role=api_gateway_logs_role,
+            cloud_watch_role=True,
             deploy_options=apigw.StageOptions(
                 logging_level=apigw.MethodLoggingLevel.INFO,
                 data_trace_enabled=True,

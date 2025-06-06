@@ -45,14 +45,14 @@ package:
     - 'backend/**'
     - 'requirements.txt'
     - 'wsgi_handler.py'
-    - 'package/markupsafe/**'
-    - 'package/jinja2/**'
-    - 'package/werkzeug/**'
-    - 'package/flask/**'
-    - 'package/click/**'
-    - 'package/itsdangerous/**'
-    - 'package/requests/**'
-    - 'package/python_dotenv/**'
+    - 'markupsafe/**'
+    - 'jinja2/**'
+    - 'werkzeug/**'
+    - 'flask/**'
+    - 'click/**'
+    - 'itsdangerous/**'
+    - 'requests/**'
+    - 'python_dotenv/**'
 
 functions:
   api:
@@ -78,14 +78,14 @@ functions:
         - 'backend/**'
         - 'requirements.txt'
         - 'wsgi_handler.py'
-        - 'package/markupsafe/**'
-        - 'package/jinja2/**'
-        - 'package/werkzeug/**'
-        - 'package/flask/**'
-        - 'package/click/**'
-        - 'package/itsdangerous/**'
-        - 'package/requests/**'
-        - 'package/python_dotenv/**'
+        - 'markupsafe/**'
+        - 'jinja2/**'
+        - 'werkzeug/**'
+        - 'flask/**'
+        - 'click/**'
+        - 'itsdangerous/**'
+        - 'requests/**'
+        - 'python_dotenv/**'
 
 custom:
   wsgi:
@@ -93,7 +93,6 @@ custom:
     packRequirements: true
     pythonBin: python3.9
     useRequirements: true
-    packRequirementsZip: true
 
 plugins:
   - serverless-wsgi

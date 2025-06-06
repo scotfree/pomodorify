@@ -37,6 +37,20 @@ class PomodorifyStack(Stack):
             )
         )
 
+        # Grant Lambda permissions for CloudWatch Logs
+        lambda_function.add_to_role_policy(
+            iam.PolicyStatement(
+                actions=[
+                    "logs:CreateLogGroup",
+                    "logs:CreateLogStream",
+                    "logs:PutLogEvents"
+                ],
+                resources=[
+                    f"arn:aws:logs:{self.region}:*:log-group:/aws/lambda/*"
+                ]
+            )
+        )
+
         # Create API Gateway
         api = apigw.RestApi(
             self, "PomodorifyApi",

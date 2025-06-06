@@ -29,28 +29,12 @@ provider:
 
 functions:
   api:
-    handler: wsgi_handler.handler
+    handler: backend.wsgi_handler.handler
     events:
       - http:
           path: /{proxy+}
           method: any
           cors: true
-    package:
-      patterns:
-        - '!venv/**'
-        - '!__pycache__/**'
-        - '!.git/**'
-        - '!.env'
-        - '!.gitignore'
-        - '!README.md'
-        - '!node_modules/**'
-        - '!package*.json'
-        - '!serverless.yml'
-        - '!deployment.zip'
-        - 'wsgi_handler.py'
-        - 'backend/**'
-        - 'frontend/**'
-        - 'requirements.txt'
 
 custom:
   wsgi:
@@ -61,4 +45,14 @@ plugins:
   - serverless-wsgi
 
 package:
-  individually: true
+  patterns:
+    - '!venv/**'
+    - '!__pycache__/**'
+    - '!.git/**'
+    - '!.env'
+    - '!.gitignore'
+    - '!README.md'
+    - '!node_modules/**'
+    - '!package*.json'
+    - '!serverless.yml'
+    - '!deployment.zip'

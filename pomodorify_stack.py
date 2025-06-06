@@ -80,7 +80,15 @@ class PomodorifyStack(Stack):
         # Create Lambda integration
         integration = apigw.LambdaIntegration(
             lambda_function,
-            request_templates={"application/json": '{ "statusCode": "200" }'}
+            proxy=True,
+            integration_responses=[
+                apigw.IntegrationResponse(
+                    status_code="200",
+                    response_templates={
+                        "application/json": "$input.json('$')"
+                    }
+                )
+            ]
         )
 
         # Add proxy resource

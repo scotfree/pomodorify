@@ -45,7 +45,14 @@ package:
     - 'backend/**'
     - 'requirements.txt'
     - 'wsgi_handler.py'
-    - 'package/**'
+    - 'package/markupsafe/**'
+    - 'package/jinja2/**'
+    - 'package/werkzeug/**'
+    - 'package/flask/**'
+    - 'package/click/**'
+    - 'package/itsdangerous/**'
+    - 'package/requests/**'
+    - 'package/python_dotenv/**'
 
 functions:
   api:
@@ -71,7 +78,14 @@ functions:
         - 'backend/**'
         - 'requirements.txt'
         - 'wsgi_handler.py'
-        - 'package/**'
+        - 'package/markupsafe/**'
+        - 'package/jinja2/**'
+        - 'package/werkzeug/**'
+        - 'package/flask/**'
+        - 'package/click/**'
+        - 'package/itsdangerous/**'
+        - 'package/requests/**'
+        - 'package/python_dotenv/**'
 
 custom:
   wsgi:

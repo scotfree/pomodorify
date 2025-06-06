@@ -2,7 +2,7 @@ service: pomodorify
 
 provider:
   name: aws
-  runtime: python3.10
+  runtime: python3.12
   region: us-west-1
   stage: ${opt:stage, 'dev'}
   environment:
@@ -29,18 +29,32 @@ provider:
 
 functions:
   api:
-    handler: backend/wsgi_handler.handler
+    handler: wsgi_handler.handler
     events:
       - http:
           path: /{proxy+}
           method: any
           cors: true
     package:
-      artifact: deployment.zip
+      patterns:
+        - '!venv/**'
+        - '!__pycache__/**'
+        - '!.git/**'
+        - '!.env'
+        - '!.gitignore'
+        - '!README.md'
+        - '!node_modules/**'
+        - '!package*.json'
+        - '!serverless.yml'
+        - '!deployment.zip'
+        - 'wsgi_handler.py'
+        - 'backend/**'
+        - 'frontend/**'
+        - 'requirements.txt'
 
 custom:
   wsgi:
-    app: backend/handler.app
+    app: backend.handler.app
     packRequirements: false
 
 plugins:

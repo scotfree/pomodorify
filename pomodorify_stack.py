@@ -18,15 +18,18 @@ class PomodorifyStack(Stack):
             code=_lambda.Code.from_asset("backend"),
             handler="wsgi_handler.handler",
             environment={
-                "SPOTIFY_CLIENT_ID": ssm.StringParameter.value_for_string_parameter(
-                    self, "/pomodorify/dev/SPOTIFY_CLIENT_ID"
-                ),
-                "SPOTIFY_CLIENT_SECRET": ssm.StringParameter.value_for_string_parameter(
-                    self, "/pomodorify/dev/SPOTIFY_CLIENT_SECRET"
-                ),
-                "SPOTIFY_REDIRECT_URI": ssm.StringParameter.value_for_string_parameter(
-                    self, "/pomodorify/dev/SPOTIFY_REDIRECT_URI"
-                ),
+                "SPOTIFY_CLIENT_ID": ssm.StringParameter.from_string_parameter_name(
+                    self, "SpotifyClientId",
+                    "/pomodorify/dev/SPOTIFY_CLIENT_ID"
+                ).string_value,
+                "SPOTIFY_CLIENT_SECRET": ssm.StringParameter.from_string_parameter_name(
+                    self, "SpotifyClientSecret",
+                    "/pomodorify/dev/SPOTIFY_CLIENT_SECRET"
+                ).string_value,
+                "SPOTIFY_REDIRECT_URI": ssm.StringParameter.from_string_parameter_name(
+                    self, "SpotifyRedirectUri",
+                    "/pomodorify/dev/SPOTIFY_REDIRECT_URI"
+                ).string_value,
             }
         )
 

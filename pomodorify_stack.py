@@ -3,7 +3,6 @@ from aws_cdk import (
     aws_lambda as _lambda,
     aws_apigateway as apigw,
     aws_iam as iam,
-    aws_ssm as ssm,
 )
 from constructs import Construct
 
@@ -18,18 +17,9 @@ class PomodorifyStack(Stack):
             code=_lambda.Code.from_asset("backend"),
             handler="wsgi_handler.handler",
             environment={
-                "SPOTIFY_CLIENT_ID": ssm.StringParameter.from_string_parameter_name(
-                    self, "SpotifyClientId",
-                    "/pomodorify/dev/SPOTIFY_CLIENT_ID"
-                ).string_value,
-                "SPOTIFY_CLIENT_SECRET": ssm.StringParameter.from_string_parameter_name(
-                    self, "SpotifyClientSecret",
-                    "/pomodorify/dev/SPOTIFY_CLIENT_SECRET"
-                ).string_value,
-                "SPOTIFY_REDIRECT_URI": ssm.StringParameter.from_string_parameter_name(
-                    self, "SpotifyRedirectUri",
-                    "/pomodorify/dev/SPOTIFY_REDIRECT_URI"
-                ).string_value,
+                "SPOTIFY_CLIENT_ID_PARAM": "/pomodorify/dev/SPOTIFY_CLIENT_ID",
+                "SPOTIFY_CLIENT_SECRET_PARAM": "/pomodorify/dev/SPOTIFY_CLIENT_SECRET",
+                "SPOTIFY_REDIRECT_URI_PARAM": "/pomodorify/dev/SPOTIFY_REDIRECT_URI",
             }
         )
 

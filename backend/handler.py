@@ -6,6 +6,7 @@ import random
 from urllib.parse import urlencode
 from typing import Optional, List, Dict, Any
 import logging
+import boto3
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -13,10 +14,20 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__, static_folder='../frontend', static_url_path='/static')
 
-# Load Spotify credentials from environment variables
-SPOTIFY_CLIENT_ID = os.environ['SPOTIFY_CLIENT_ID']
-SPOTIFY_CLIENT_SECRET = os.environ['SPOTIFY_CLIENT_SECRET']
-SPOTIFY_REDIRECT_URI = os.environ['SPOTIFY_REDIRECT_URI']
+# Initialize SSM client
+ssm = boto3.client('ssm')
+
+def get_parameter(param_name):
+    response = ssm.get_parameter(
+        Name=param_name,
+        WithDecryption=True
+    )
+    return response['Parameter']['Value']
+
+# Get environment variables
+SPOTIFY_CLIENT_ID = get_parameter(os.environ['SPOTIFY_CLIENT_ID_PARAM'])
+SPOTIFY_CLIENT_SECRET = get_parameter(os.environ['SPOTIFY_CLIENT_SECRET_PARAM'])
+SPOTIFY_REDIRECT_URI = get_parameter(os.environ['SPOTIFY_REDIRECT_URI_PARAM'])
 
 # Store access tokens (in production, use a proper session management)
 user_tokens = {}

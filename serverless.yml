@@ -2,7 +2,7 @@ service: pomodorify
 
 provider:
   name: aws
-  runtime: python3.12
+  runtime: python3.10
   region: us-west-1
   stage: ${opt:stage, 'dev'}
   environment:

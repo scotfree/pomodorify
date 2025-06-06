@@ -38,6 +38,7 @@ functions:
           method: any
           cors: true
     package:
+      individually: true
       patterns:
         - '!venv/**'
         - '!__pycache__/**'

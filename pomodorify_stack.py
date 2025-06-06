@@ -15,7 +15,16 @@ class PomodorifyStack(Stack):
         lambda_function = _lambda.Function(
             self, "PomodorifyFunction",
             runtime=_lambda.Runtime.PYTHON_3_9,
-            code=_lambda.Code.from_asset("backend"),
+            code=_lambda.Code.from_asset(
+                "backend",
+                bundling={
+                    "image": _lambda.Runtime.PYTHON_3_9.bundling_image,
+                    "command": [
+                        "bash", "-c",
+                        "pip install -r requirements.txt -t /asset-output && cp -au . /asset-output"
+                    ],
+                }
+            ),
             handler="wsgi_handler.handler",
             environment={
                 "SPOTIFY_CLIENT_ID_PARAM": "/pomodorify/dev/SPOTIFY_CLIENT_ID",

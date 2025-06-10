@@ -19,8 +19,17 @@ window.addEventListener('load', async () => {
     if (code) {
         try {
             const response = await fetch(`/api/callback?code=${code}`);
+            if (!response.ok) {
+                throw new Error(`Callback failed: ${response.status} ${response.statusText}`);
+            }
             const data = await response.json();
+            
+            if (!data.user_id) {
+                throw new Error('No user ID received from callback');
+            }
+            
             userId = data.user_id;
+            console.log('User ID set:', userId);
             
             // Remove the code from URL
             window.history.replaceState({}, document.title, window.location.pathname);
@@ -32,15 +41,24 @@ window.addEventListener('load', async () => {
         } catch (error) {
             console.error('Callback failed:', error);
             alert('Failed to authenticate. Please try again.');
+            // Reset the page state
+            document.getElementById('login-section').style.display = 'block';
+            document.getElementById('playlist-section').style.display = 'none';
         }
     }
 });
 
 async function loadPlaylists() {
+    if (!userId) {
+        console.error('No user ID available for loading playlists');
+        return;
+    }
+    
     try {
+        console.log('Loading playlists for user:', userId);
         const response = await fetch(`/api/playlists/${userId}`);
         if (!response.ok) {
-            throw new Error('Failed to fetch playlists');
+            throw new Error(`Failed to fetch playlists: ${response.status} ${response.statusText}`);
         }
         const data = await response.json();
         

@@ -10,7 +10,7 @@ Environment="PYTHONPATH=/usr/share/nginx/pomodorify"
 Environment="SPOTIFY_CLIENT_ID_PARAM=/pomodorify/dev/SPOTIFY_CLIENT_ID"
 Environment="SPOTIFY_CLIENT_SECRET_PARAM=/pomodorify/dev/SPOTIFY_CLIENT_SECRET"
 Environment="SPOTIFY_REDIRECT_URI_PARAM=/pomodorify/dev/SPOTIFY_REDIRECT_URI"
-ExecStart=/usr/share/nginx/pomodorify/venv/bin/gunicorn -c gunicorn_config.py backend.wsgi_handler:handler
+ExecStart=/usr/share/nginx/pomodorify/venv/bin/gunicorn -c gunicorn_config.py backend.wsgi_handler:application
 Restart=always
 
 [Install]

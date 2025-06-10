@@ -14,6 +14,10 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__, static_folder='../frontend', static_url_path='/static')
 
+# Add URL prefix for API routes
+app.url_map.strict_slashes = False
+app.config['APPLICATION_ROOT'] = '/api'
+
 # Initialize SSM client
 ssm = boto3.client('ssm')
 

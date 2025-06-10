@@ -99,8 +99,12 @@ def login():
 
 @app.route('/callback')
 def callback():
+    logger.info("Callback route hit")
     code = request.args.get('code')
+    logger.info(f"Received code: {code}")
+    
     if not code:
+        logger.error("No code provided")
         return jsonify({"error": "No code provided"}), 400
 
     token_url = "https://accounts.spotify.com/api/token"
@@ -111,8 +115,11 @@ def callback():
         "client_id": SPOTIFY_CLIENT_ID,
         "client_secret": SPOTIFY_CLIENT_SECRET
     }
+    logger.info(f"Making token request with redirect URI: {SPOTIFY_REDIRECT_URI}")
+    
     response = requests.post(token_url, data=data)
     if response.status_code != 200:
+        logger.error(f"Failed to obtain access token: {response.text}")
         return jsonify({"error": "Failed to obtain access token"}), 400
     
     token_data = response.json()

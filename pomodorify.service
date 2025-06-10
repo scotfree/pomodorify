@@ -6,9 +6,10 @@ After=network.target
 User=ec2-user
 WorkingDirectory=/usr/share/nginx/pomodorify
 Environment="PATH=/usr/share/nginx/pomodorify/venv/bin"
-Environment="SPOTIFY_CLIENT_ID=/pomodorify/dev/SPOTIFY_CLIENT_ID"
-Environment="SPOTIFY_CLIENT_SECRET=/pomodorify/dev/SPOTIFY_CLIENT_SECRET"
-Environment="SPOTIFY_REDIRECT_URI=/pomodorify/dev/SPOTIFY_REDIRECT_URI"
+Environment="PYTHONPATH=/usr/share/nginx/pomodorify"
+Environment="SPOTIFY_CLIENT_ID_PARAM=/pomodorify/dev/SPOTIFY_CLIENT_ID"
+Environment="SPOTIFY_CLIENT_SECRET_PARAM=/pomodorify/dev/SPOTIFY_CLIENT_SECRET"
+Environment="SPOTIFY_REDIRECT_URI_PARAM=/pomodorify/dev/SPOTIFY_REDIRECT_URI"
 ExecStart=/usr/share/nginx/pomodorify/venv/bin/gunicorn -c gunicorn_config.py backend.wsgi_handler:handler
 Restart=always
 

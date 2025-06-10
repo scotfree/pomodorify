@@ -14,10 +14,6 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__, static_folder='../frontend', static_url_path='/static')
 
-# Add URL prefix for API routes
-app.url_map.strict_slashes = False
-app.config['APPLICATION_ROOT'] = '/api'
-
 # Initialize SSM client
 ssm = boto3.client('ssm')
 
@@ -85,7 +81,7 @@ def select_tracks_for_duration(tracks: List[Dict[str, Any]], duration_minutes: i
 def root():
     return send_from_directory(app.static_folder, 'index.html')
 
-@app.route('/login')
+@app.route('/api/login')
 def login():
     scope = "user-read-private user-read-email playlist-read-private playlist-modify-private"
     params = {
@@ -97,7 +93,7 @@ def login():
     auth_url = f"https://accounts.spotify.com/authorize?{urlencode(params)}"
     return jsonify({"auth_url": auth_url})
 
-@app.route('/callback')
+@app.route('/api/callback')
 def callback():
     logger.info("Callback route hit")
     code = request.args.get('code')
@@ -135,7 +131,7 @@ def callback():
     user_tokens[user_info['id']] = token_data
     return jsonify({"user_id": user_info['id']})
 
-@app.route('/playlists/<user_id>')
+@app.route('/api/playlists/<user_id>')
 def get_playlists(user_id):
     if user_id not in user_tokens:
         return jsonify({"error": "User not authenticated"}), 401
@@ -151,7 +147,7 @@ def get_playlists(user_id):
     
     return jsonify(response.json())
 
-@app.route('/generate-playlist/<user_id>', methods=['POST'])
+@app.route('/api/generate-playlist/<user_id>', methods=['POST'])
 def generate_playlist(user_id):
     if user_id not in user_tokens:
         return jsonify({"error": "User not authenticated"}), 401
@@ -183,7 +179,7 @@ def generate_playlist(user_id):
         "track_count": len(selected_tracks)
     })
 
-@app.route('/save-playlist/<user_id>', methods=['POST'])
+@app.route('/api/save-playlist/<user_id>', methods=['POST'])
 def save_playlist(user_id):
     if user_id not in user_tokens:
         return jsonify({"error": "User not authenticated"}), 401

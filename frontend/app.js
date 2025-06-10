@@ -3,7 +3,7 @@ let currentPreview = null;
 
 document.getElementById('login-button').addEventListener('click', async () => {
     try {
-        const response = await fetch('/login');
+        const response = await fetch('/api/login');
         const data = await response.json();
         window.location.href = data.auth_url;
     } catch (error) {
@@ -18,7 +18,7 @@ window.addEventListener('load', async () => {
     
     if (code) {
         try {
-            const response = await fetch(`/callback?code=${code}`);
+            const response = await fetch(`/api/callback?code=${code}`);
             const data = await response.json();
             userId = data.user_id;
             
@@ -38,7 +38,7 @@ window.addEventListener('load', async () => {
 
 async function loadPlaylists() {
     try {
-        const response = await fetch(`/playlists/${userId}`);
+        const response = await fetch(`/api/playlists/${userId}`);
         if (!response.ok) {
             throw new Error('Failed to fetch playlists');
         }
@@ -65,7 +65,7 @@ document.getElementById('generate-button').addEventListener('click', async () =>
     const playlistName = document.getElementById('playlist-name').value;
     
     try {
-        const response = await fetch(`/generate-playlist/${userId}`, {
+        const response = await fetch(`/api/generate-playlist/${userId}`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -127,7 +127,7 @@ document.getElementById('save-button').addEventListener('click', async () => {
         `Pomodoro Playlist (${formatDuration(currentPreview.total_duration_ms)})`;
     
     try {
-        const response = await fetch(`/save-playlist/${userId}`, {
+        const response = await fetch(`/api/save-playlist/${userId}`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'

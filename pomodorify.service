@@ -5,11 +5,11 @@ After=network.target
 [Service]
 User=ec2-user
 WorkingDirectory=/usr/share/nginx/pomodorify
-Environment="PATH=/home/ec2-user/pomo/venv/bin"
+Environment="PATH=/usr/share/nginx/pomodorify/venv/bin"
 Environment="SPOTIFY_CLIENT_ID=/pomodorify/dev/SPOTIFY_CLIENT_ID"
 Environment="SPOTIFY_CLIENT_SECRET=/pomodorify/dev/SPOTIFY_CLIENT_SECRET"
 Environment="SPOTIFY_REDIRECT_URI=/pomodorify/dev/SPOTIFY_REDIRECT_URI"
-ExecStart=/home/ec2-user/pomo/venv/bin/gunicorn -c gunicorn_config.py backend.wsgi_handler:handler
+ExecStart=/usr/share/nginx/pomodorify/venv/bin/gunicorn -c gunicorn_config.py backend.wsgi_handler:handler
 Restart=always
 
 [Install]

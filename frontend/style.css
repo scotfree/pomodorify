@@ -83,6 +83,12 @@ label {
     text-shadow: 0 0 5px #8b008b;
 }
 
+/* Special styling for playlist selection */
+#playlist-select-label {
+    font-size: 1.3rem;
+    margin-bottom: 0.75rem;
+}
+
 input, select {
     width: 100%;
     max-width: 300px;
@@ -96,6 +102,20 @@ input, select {
     text-align: center;
     box-shadow: 0 0 15px rgba(139, 0, 139, 0.4);
     transition: all 0.3s ease;
+}
+
+/* Special styling for playlist dropdown */
+#playlist-select {
+    font-size: 1.2rem;
+    padding: 1rem;
+    background: rgba(25, 25, 35, 0.95);
+}
+
+/* Smaller duration field */
+#duration {
+    max-width: 120px;
+    font-size: 1.1rem;
+    padding: 0.6rem;
 }
 
 input:focus, select:focus {

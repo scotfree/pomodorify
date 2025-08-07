@@ -6,6 +6,7 @@ class PomodorifyApp {
         this.accessToken = null;
         this.refreshToken = null;
         this.tokenExpiry = null;
+        this.codeVerifier = null;
 
         this.initializeApp();
     }
@@ -50,6 +51,28 @@ class PomodorifyApp {
         localStorage.setItem('spotify_token_expiry', this.tokenExpiry.toString());
     }
 
+    // Generate a random string for PKCE
+    generateRandomString(length) {
+        const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+        let text = '';
+        for (let i = 0; i < length; i++) {
+            text += possible.charAt(Math.floor(Math.random() * possible.length));
+        }
+        return text;
+    }
+
+    // Generate code challenge for PKCE
+    async generateCodeChallenge(codeVerifier) {
+        const encoder = new TextEncoder();
+        const data = encoder.encode(codeVerifier);
+        const digest = await crypto.subtle.digest('SHA-256', data);
+        
+        return btoa(String.fromCharCode(...new Uint8Array(digest)))
+            .replace(/=/g, '')
+            .replace(/\+/g, '-')
+            .replace(/\//g, '_');
+    }
+
     async refreshAccessToken() {
         if (!this.refreshToken) return false;
 
@@ -89,12 +112,21 @@ class PomodorifyApp {
         return true;
     }
 
-    login() {
+    async login() {
+        // Generate PKCE parameters
+        this.codeVerifier = this.generateRandomString(128);
+        const codeChallenge = await this.generateCodeChallenge(this.codeVerifier);
+        
+        // Store code verifier for later use
+        sessionStorage.setItem('code_verifier', this.codeVerifier);
+
         const params = new URLSearchParams({
             client_id: this.clientId,
             response_type: 'code',
             redirect_uri: this.redirectUri,
             scope: this.scope,
+            code_challenge_method: 'S256',
+            code_challenge: codeChallenge,
         });
 
         window.location.href = `https://accounts.spotify.com/authorize?${params.toString()}`;
@@ -119,6 +151,12 @@ class PomodorifyApp {
     }
 
     async exchangeCodeForToken(code) {
+        // Get the code verifier from session storage
+        const codeVerifier = sessionStorage.getItem('code_verifier');
+        if (!codeVerifier) {
+            throw new Error('No code verifier found');
+        }
+
         const response = await fetch('https://accounts.spotify.com/api/token', {
             method: 'POST',
             headers: {
@@ -129,15 +167,21 @@ class PomodorifyApp {
                 code: code,
                 redirect_uri: this.redirectUri,
                 client_id: this.clientId,
+                code_verifier: codeVerifier,
             }),
         });
 
         if (!response.ok) {
+            const errorData = await response.text();
+            console.error('Token exchange failed:', errorData);
             throw new Error('Failed to exchange code for token');
         }
 
         const tokenData = await response.json();
         this.saveTokensToStorage(tokenData);
+        
+        // Clean up the code verifier
+        sessionStorage.removeItem('code_verifier');
     }
 
     async loadPlaylists() {

@@ -1,106 +1,236 @@
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap');
+
 body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+    font-family: 'Orbitron', monospace;
     margin: 0;
     padding: 0;
     min-height: 100vh;
-    background: linear-gradient(135deg, #1DB954 0%, #191414 100%);
-    color: #333;
+    background: url('hmm.jpg') no-repeat center center fixed;
+    background-size: cover;
+    color: #e6e6fa;
+    text-align: center;
+    position: relative;
+}
+
+body::before {
+    content: '';
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(25, 25, 35, 0.4);
+    z-index: -1;
 }
 
 .container {
-    max-width: 800px;
-    margin: 0 auto;
+    max-width: 600px;
+    margin: 2rem auto;
     padding: 2rem;
-    background-color: rgba(255, 255, 255, 0.9);
-    border-radius: 10px;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    background: rgba(25, 25, 35, 0.6);
+    border: 2px solid #8b008b;
+    border-radius: 15px;
+    box-shadow: 
+        0 0 30px #8b008b,
+        inset 0 0 30px rgba(139, 0, 139, 0.2);
+    backdrop-filter: blur(10px);
 }
 
 h1 {
-    color: #1DB954;
+    color: #e6e6fa;
     text-align: center;
     margin-bottom: 1rem;
+    font-size: 2.5rem;
+    font-weight: 900;
+    text-shadow: 
+        0 0 15px #8b008b,
+        0 0 25px #8b008b,
+        0 0 35px #8b008b;
+    letter-spacing: 3px;
+    text-transform: uppercase;
 }
 
 h2 {
-    color: #191414;
+    color: #e6e6fa;
     margin-top: 2rem;
     margin-bottom: 1rem;
+    font-size: 1.6rem;
+    font-weight: 700;
+    text-shadow: 0 0 10px #8b008b;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+}
+
+p {
+    color: #e6e6fa;
+    font-size: 1.1rem;
+    margin-bottom: 2rem;
+    text-shadow: 0 0 5px #8b008b;
 }
 
 .form-group {
-    margin-bottom: 1rem;
+    margin-bottom: 1.5rem;
+    text-align: center;
 }
 
 label {
     display: block;
     margin-bottom: 0.5rem;
-    font-weight: 500;
+    font-weight: 700;
+    color: #e6e6fa;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    text-shadow: 0 0 5px #8b008b;
 }
 
 input, select {
     width: 100%;
-    padding: 0.5rem;
-    border: 1px solid #ddd;
-    border-radius: 4px;
+    max-width: 300px;
+    padding: 0.75rem;
+    border: 2px solid #8b008b;
+    border-radius: 8px;
     font-size: 1rem;
+    font-family: 'Orbitron', monospace;
+    background: rgba(25, 25, 35, 0.9);
+    color: #e6e6fa;
+    text-align: center;
+    box-shadow: 0 0 15px rgba(139, 0, 139, 0.4);
+    transition: all 0.3s ease;
+}
+
+input:focus, select:focus {
+    outline: none;
+    border-color: #8b008b;
+    box-shadow: 
+        0 0 20px #8b008b,
+        0 0 30px rgba(139, 0, 139, 0.6);
+    background: rgba(139, 0, 139, 0.2);
 }
 
 button {
-    background-color: #1DB954;
-    color: white;
-    border: none;
-    padding: 0.75rem 1.5rem;
-    border-radius: 4px;
+    background: linear-gradient(45deg, #8b008b, #4b0082);
+    color: #e6e6fa;
+    border: 2px solid #8b008b;
+    padding: 1rem 2rem;
+    border-radius: 8px;
     cursor: pointer;
-    font-size: 1rem;
-    font-weight: 500;
-    transition: background-color 0.2s;
+    font-size: 1.1rem;
+    font-weight: 700;
+    font-family: 'Orbitron', monospace;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    transition: all 0.3s ease;
+    box-shadow: 
+        0 0 20px rgba(139, 0, 139, 0.6),
+        inset 0 0 15px rgba(230, 230, 250, 0.1);
+    margin: 0.5rem;
 }
 
 button:hover {
-    background-color: #1ed760;
+    background: linear-gradient(45deg, #4b0082, #8b008b);
+    box-shadow: 
+        0 0 30px #8b008b,
+        0 0 40px rgba(139, 0, 139, 0.8),
+        inset 0 0 20px rgba(230, 230, 250, 0.2);
+    transform: translateY(-2px);
 }
 
 .button-group {
     display: flex;
     gap: 1rem;
     margin-top: 1rem;
+    justify-content: center;
+    flex-wrap: wrap;
 }
 
 .button-group button {
     flex: 1;
+    min-width: 120px;
 }
 
 #regenerate-button {
-    background-color: #666;
+    background: linear-gradient(45deg, #8b4513, #a0522d);
+    border-color: #8b4513;
+    box-shadow: 
+        0 0 20px rgba(139, 69, 19, 0.6),
+        inset 0 0 15px rgba(230, 230, 250, 0.1);
 }
 
 #regenerate-button:hover {
-    background-color: #777;
+    background: linear-gradient(45deg, #a0522d, #8b4513);
+    box-shadow: 
+        0 0 30px #8b4513,
+        0 0 40px rgba(139, 69, 19, 0.8),
+        inset 0 0 20px rgba(230, 230, 250, 0.2);
+}
+
+#logout-button {
+    background: linear-gradient(45deg, #4a4a4a, #696969);
+    border-color: #4a4a4a;
+    box-shadow: 
+        0 0 15px rgba(74, 74, 74, 0.6),
+        inset 0 0 10px rgba(230, 230, 250, 0.1);
+}
+
+#logout-button:hover {
+    background: linear-gradient(45deg, #696969, #4a4a4a);
+    box-shadow: 
+        0 0 25px #4a4a4a,
+        0 0 35px rgba(74, 74, 74, 0.8),
+        inset 0 0 15px rgba(230, 230, 250, 0.2);
 }
 
 .playlist-info {
-    background-color: #f5f5f5;
-    padding: 1rem;
-    border-radius: 4px;
-    margin-bottom: 1rem;
+    background: rgba(139, 0, 139, 0.2);
+    padding: 1.5rem;
+    border-radius: 8px;
+    margin-bottom: 1.5rem;
+    border: 2px solid #8b008b;
+    box-shadow: 0 0 20px rgba(139, 0, 139, 0.4);
+}
+
+.playlist-info p {
+    margin: 0.5rem 0;
+    font-size: 1.2rem;
+    font-weight: 700;
 }
 
 .track-list {
     max-height: 400px;
     overflow-y: auto;
-    border: 1px solid #ddd;
+    border: 2px solid #8b008b;
+    border-radius: 8px;
+    margin-bottom: 1.5rem;
+    background: rgba(25, 25, 35, 0.9);
+    box-shadow: 0 0 20px rgba(139, 0, 139, 0.4);
+}
+
+.track-list::-webkit-scrollbar {
+    width: 8px;
+}
+
+.track-list::-webkit-scrollbar-track {
+    background: rgba(25, 25, 35, 0.9);
     border-radius: 4px;
-    margin-bottom: 1rem;
+}
+
+.track-list::-webkit-scrollbar-thumb {
+    background: #8b008b;
+    border-radius: 4px;
+    box-shadow: 0 0 5px #8b008b;
 }
 
 .track-item {
-    padding: 0.75rem;
-    border-bottom: 1px solid #ddd;
+    padding: 1rem;
+    border-bottom: 1px solid rgba(139, 0, 139, 0.4);
     display: flex;
     justify-content: space-between;
     align-items: center;
+    transition: background 0.3s ease;
+}
+
+.track-item:hover {
+    background: rgba(139, 0, 139, 0.2);
 }
 
 .track-item:last-child {
@@ -109,35 +239,82 @@ button:hover {
 
 .track-info {
     flex: 1;
+    text-align: left;
 }
 
 .track-name {
-    font-weight: 500;
+    font-weight: 700;
+    color: #e6e6fa;
+    text-shadow: 0 0 5px #8b008b;
+    margin-bottom: 0.25rem;
 }
 
 .track-artist {
-    color: #666;
+    color: #dda0dd;
     font-size: 0.9rem;
+    text-shadow: 0 0 3px #8b008b;
 }
 
 .track-duration {
-    color: #666;
-    font-size: 0.9rem;
-    margin-left: 1rem;
+    color: #e6e6fa;
+    font-weight: 700;
+    text-shadow: 0 0 5px #8b008b;
+    min-width: 60px;
+    text-align: right;
 }
 
 #playlist-link {
+    color: #e6e6fa;
+    text-decoration: none;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    padding: 0.75rem 1.5rem;
+    border: 2px solid #8b008b;
+    border-radius: 8px;
     display: inline-block;
     margin: 1rem 0;
-    color: #1DB954;
-    text-decoration: none;
+    transition: all 0.3s ease;
+    box-shadow: 0 0 15px rgba(139, 0, 139, 0.4);
+    background: rgba(139, 0, 139, 0.2);
 }
 
 #playlist-link:hover {
-    text-decoration: underline;
+    background: rgba(139, 0, 139, 0.4);
+    box-shadow: 0 0 25px #8b008b;
+    transform: translateY(-2px);
 }
 
-#create-another-button {
-    display: block;
-    margin: 1rem auto;
+/* Responsive design */
+@media (max-width: 768px) {
+    .container {
+        margin: 1rem;
+        padding: 1rem;
+    }
+    
+    h1 {
+        font-size: 2rem;
+    }
+    
+    h2 {
+        font-size: 1.3rem;
+    }
+    
+    .button-group {
+        flex-direction: column;
+    }
+    
+    .button-group button {
+        min-width: auto;
+    }
+    
+    .track-item {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.5rem;
+    }
+    
+    .track-duration {
+        text-align: left;
+    }
 }

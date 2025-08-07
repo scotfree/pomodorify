@@ -23,12 +23,14 @@ class PomodorifyApp {
         const saveButton = document.getElementById('save-button');
         const regenerateButton = document.getElementById('regenerate-button');
         const createAnotherButton = document.getElementById('create-another-button');
+        const logoutButton = document.getElementById('logout-button');
 
         loginButton?.addEventListener('click', () => this.login());
         generateButton?.addEventListener('click', () => this.generatePlaylist());
         saveButton?.addEventListener('click', () => this.savePlaylist());
         regenerateButton?.addEventListener('click', () => this.generatePlaylist());
         createAnotherButton?.addEventListener('click', () => this.showPlaylistSection());
+        logoutButton?.addEventListener('click', () => this.logout());
     }
 
     loadTokensFromStorage() {
@@ -438,6 +440,18 @@ class PomodorifyApp {
 
         const playlistLink = document.getElementById('playlist-link');
         playlistLink.href = playlistUrl;
+    }
+
+    async logout() {
+        localStorage.removeItem('spotify_access_token');
+        localStorage.removeItem('spotify_refresh_token');
+        localStorage.removeItem('spotify_token_expiry');
+        localStorage.removeItem('code_verifier');
+        this.accessToken = null;
+        this.refreshToken = null;
+        this.tokenExpiry = null;
+        this.updateUI();
+        alert('Logged out successfully!');
     }
 }
 

@@ -191,25 +191,46 @@ class PomodorifyApp {
         }
 
         try {
-            const response = await fetch('https://api.spotify.com/v1/me/playlists', {
-                headers: {
-                    'Authorization': `Bearer ${this.accessToken}`,
-                },
-            });
-
-            if (!response.ok) {
-                throw new Error('Failed to fetch playlists');
-            }
-
-            const data = await response.json();
+            const allPlaylists = [];
+            let offset = 0;
+            const limit = 50; // Spotify's max per request
             
-            if (!data.items || data.items.length === 0) {
+            // Fetch playlists in batches until we have 100 or no more available
+            while (allPlaylists.length < 100) {
+                const response = await fetch(`https://api.spotify.com/v1/me/playlists?limit=${limit}&offset=${offset}`, {
+                    headers: {
+                        'Authorization': `Bearer ${this.accessToken}`,
+                    },
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to fetch playlists');
+                }
+
+                const data = await response.json();
+                
+                // Filter out POMO_ playlists and add to our collection
+                const filteredPlaylists = data.items.filter(playlist => !playlist.name.startsWith('POMO_'));
+                allPlaylists.push(...filteredPlaylists);
+                
+                // If we got fewer than the limit, we've reached the end
+                if (data.items.length < limit) {
+                    break;
+                }
+                
+                offset += limit;
+            }
+            
+            // Limit to 100 playlists
+            const finalPlaylists = allPlaylists.slice(0, 100);
+            
+            if (finalPlaylists.length === 0) {
                 const select = document.getElementById('playlist-select');
                 select.innerHTML = '<option value="">No playlists found</option>';
                 return;
             }
             
-            this.populatePlaylistSelect(data.items);
+            this.populatePlaylistSelect(finalPlaylists);
         } catch (error) {
             console.error('Failed to load playlists:', error);
             alert('Failed to load playlists. Please try again.');
@@ -220,12 +241,44 @@ class PomodorifyApp {
         const select = document.getElementById('playlist-select');
         select.innerHTML = '';
 
+        // Add a default option
+        const defaultOption = document.createElement('option');
+        defaultOption.value = '';
+        defaultOption.textContent = '-- Select a playlist --';
+        select.appendChild(defaultOption);
+
         playlists.forEach(playlist => {
             const option = document.createElement('option');
             option.value = playlist.id;
             option.textContent = playlist.name;
             select.appendChild(option);
         });
+
+        // Add event listener for automatic name generation
+        select.addEventListener('change', () => this.updatePlaylistName());
+    }
+
+    updatePlaylistName() {
+        const playlistSelect = document.getElementById('playlist-select');
+        const playlistName = playlistSelect.options[playlistSelect.selectedIndex].textContent;
+        
+        if (playlistSelect.value && playlistName !== '-- Select a playlist --') {
+            const timestamp = this.getShortTimestamp();
+            const defaultName = `POMO_${playlistName}_${timestamp}`;
+            
+            const nameInput = document.getElementById('playlist-name');
+            nameInput.value = defaultName;
+        }
+    }
+
+    getShortTimestamp() {
+        const now = new Date();
+        const month = now.toLocaleDateString('en-US', { month: 'short' });
+        const day = now.getDate().toString().padStart(2, '0');
+        const hours = now.getHours().toString().padStart(2, '0');
+        const minutes = now.getMinutes().toString().padStart(2, '0');
+        
+        return `${month}${day}_${hours}${minutes}`;
     }
 
     async generatePlaylist() {

@@ -27,7 +27,7 @@ body::before {
     max-width: 600px;
     margin: 2rem auto;
     padding: 2rem;
-    background: rgba(25, 25, 35, 0.6);
+    background: rgba(25, 25, 35, 0.4);
     border: 2px solid #8b008b;
     border-radius: 15px;
     box-shadow: 
@@ -107,6 +107,19 @@ input:focus, select:focus {
     background: rgba(139, 0, 139, 0.2);
 }
 
+/* Style dropdown options */
+select option {
+    background: rgba(25, 25, 35, 0.95);
+    color: #e6e6fa;
+    font-family: 'Orbitron', monospace;
+    font-size: 0.9rem;
+    padding: 0.5rem;
+}
+
+select option:hover {
+    background: rgba(139, 0, 139, 0.3);
+}
+
 button {
     background: linear-gradient(45deg, #8b008b, #4b0082);
     color: #e6e6fa;
@@ -165,19 +178,24 @@ button:hover {
 }
 
 #logout-button {
-    background: linear-gradient(45deg, #4a4a4a, #696969);
-    border-color: #4a4a4a;
+    background: linear-gradient(45deg, #2a2a2a, #404040);
+    border-color: #2a2a2a;
+    padding: 0.5rem 1rem;
+    font-size: 0.9rem;
+    margin-top: 1rem;
     box-shadow: 
-        0 0 15px rgba(74, 74, 74, 0.6),
-        inset 0 0 10px rgba(230, 230, 250, 0.1);
+        0 0 10px rgba(42, 42, 42, 0.4),
+        inset 0 0 5px rgba(230, 230, 250, 0.05);
+    opacity: 0.7;
 }
 
 #logout-button:hover {
-    background: linear-gradient(45deg, #696969, #4a4a4a);
+    background: linear-gradient(45deg, #404040, #2a2a2a);
     box-shadow: 
-        0 0 25px #4a4a4a,
-        0 0 35px rgba(74, 74, 74, 0.8),
-        inset 0 0 15px rgba(230, 230, 250, 0.2);
+        0 0 15px #2a2a2a,
+        0 0 25px rgba(42, 42, 42, 0.6),
+        inset 0 0 10px rgba(230, 230, 250, 0.1);
+    opacity: 1;
 }
 
 .playlist-info {

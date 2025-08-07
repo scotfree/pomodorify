@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pomodorify Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .test-section { margin: 20px 0; padding: 15px; border: 1px solid #ccc; }
+        button { margin: 5px; padding: 10px; }
+        pre { background: #f5f5f5; padding: 10px; overflow-x: auto; }
+    </style>
+</head>
+<body>
+    <h1>Pomodorify PKCE Test</h1>
+    
+    <div class="test-section">
+        <h3>PKCE Code Generation Test</h3>
+        <button onclick="testCodeGeneration()">Test Code Generation</button>
+        <button onclick="testCodeChallenge()">Test Code Challenge</button>
+        <button onclick="testFullPKCE()">Test Full PKCE Flow</button>
+        <div id="test-results"></div>
+    </div>
+
+    <div class="test-section">
+        <h3>Current App State</h3>
+        <button onclick="showAppState()">Show App State</button>
+        <button onclick="clearStorage()">Clear Storage</button>
+        <div id="app-state"></div>
+    </div>
+
+    <script>
+        // Copy the PKCE functions from your app.js
+        function generateRandomString(length) {
+            const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+            let text = '';
+            for (let i = 0; i < length; i++) {
+                text += possible.charAt(Math.floor(Math.random() * possible.length));
+            }
+            return text;
+        }
+
+        async function generateCodeChallenge(codeVerifier) {
+            const encoder = new TextEncoder();
+            const data = encoder.encode(codeVerifier);
+            const digest = await crypto.subtle.digest('SHA-256', data);
+            
+            return btoa(String.fromCharCode(...new Uint8Array(digest)))
+                .replace(/=/g, '')
+                .replace(/\+/g, '-')
+                .replace(/\//g, '_');
+        }
+
+        function testCodeGeneration() {
+            const results = document.getElementById('test-results');
+            try {
+                const codeVerifier = generateRandomString(128);
+                results.innerHTML = `
+                    <h4>Code Verifier Generation:</h4>
+                    <pre>Length: ${codeVerifier.length}
+Pattern: ${/^[A-Za-z0-9]+$/.test(codeVerifier) ? 'Valid' : 'Invalid'}
+First 20 chars: ${codeVerifier.substring(0, 20)}...</pre>
+                `;
+            } catch (error) {
+                results.innerHTML = `<h4>Error:</h4><pre>${error.message}</pre>`;
+            }
+        }
+
+        async function testCodeChallenge() {
+            const results = document.getElementById('test-results');
+            try {
+                const codeVerifier = generateRandomString(128);
+                const codeChallenge = await generateCodeChallenge(codeVerifier);
+                
+                results.innerHTML = `
+                    <h4>Code Challenge Generation:</h4>
+                    <pre>Verifier length: ${codeVerifier.length}
+Challenge length: ${codeChallenge.length}
+Challenge pattern: ${/^[A-Za-z0-9\-_]+$/.test(codeChallenge) ? 'Valid' : 'Invalid'}
+Challenge: ${codeChallenge.substring(0, 20)}...</pre>
+                `;
+            } catch (error) {
+                results.innerHTML = `<h4>Error:</h4><pre>${error.message}</pre>`;
+            }
+        }
+
+        async function testFullPKCE() {
+            const results = document.getElementById('test-results');
+            try {
+                const codeVerifier = generateRandomString(128);
+                const codeChallenge = await generateCodeChallenge(codeVerifier);
+                
+                // Test the URL generation
+                const params = new URLSearchParams({
+                    client_id: 'bac207f49dc041e0a2e8a92691c7a23a',
+                    response_type: 'code',
+                    redirect_uri: 'http://localhost:8000',
+                    scope: 'user-read-private user-read-email playlist-read-private playlist-modify-private',
+                    code_challenge_method: 'S256',
+                    code_challenge: codeChallenge,
+                });
+
+                const authUrl = `https://accounts.spotify.com/authorize?${params.toString()}`;
+                
+                results.innerHTML = `
+                    <h4>Full PKCE Flow Test:</h4>
+                    <pre>Code Verifier: ${codeVerifier.substring(0, 20)}...
+Code Challenge: ${codeChallenge.substring(0, 20)}...
+Auth URL: ${authUrl.substring(0, 100)}...</pre>
+                    <button onclick="window.open('${authUrl}', '_blank')">Test Auth URL</button>
+                `;
+            } catch (error) {
+                results.innerHTML = `<h4>Error:</h4><pre>${error.message}</pre>`;
+            }
+        }
+
+        function showAppState() {
+            const state = document.getElementById('app-state');
+            const accessToken = localStorage.getItem('spotify_access_token');
+            const refreshToken = localStorage.getItem('spotify_refresh_token');
+            const tokenExpiry = localStorage.getItem('spotify_token_expiry');
+            
+            state.innerHTML = `
+                <h4>Local Storage State:</h4>
+                <pre>Access Token: ${accessToken ? 'Present' : 'Missing'}
+Refresh Token: ${refreshToken ? 'Present' : 'Missing'}
+Token Expiry: ${tokenExpiry ? new Date(parseInt(tokenExpiry)).toLocaleString() : 'Missing'}</pre>
+            `;
+        }
+
+        function clearStorage() {
+            localStorage.removeItem('spotify_access_token');
+            localStorage.removeItem('spotify_refresh_token');
+            localStorage.removeItem('spotify_token_expiry');
+            sessionStorage.removeItem('code_verifier');
+            document.getElementById('app-state').innerHTML = '<p>Storage cleared!</p>';
+        }
+    </script>
+</body>
+</html> 

@@ -6,7 +6,6 @@ class PomodorifyApp {
         this.accessToken = null;
         this.refreshToken = null;
         this.tokenExpiry = null;
-        this.codeVerifier = null;
 
         this.initializeApp();
     }
@@ -118,7 +117,7 @@ class PomodorifyApp {
         const codeChallenge = await this.generateCodeChallenge(this.codeVerifier);
         
         // Store code verifier for later use
-        sessionStorage.setItem('code_verifier', this.codeVerifier);
+        localStorage.setItem('code_verifier', this.codeVerifier);
 
         const params = new URLSearchParams({
             client_id: this.clientId,
@@ -151,8 +150,9 @@ class PomodorifyApp {
     }
 
     async exchangeCodeForToken(code) {
-        // Get the code verifier from session storage
-        const codeVerifier = sessionStorage.getItem('code_verifier');
+        // Get the code verifier from localStorage
+        const codeVerifier = localStorage.getItem('code_verifier');
+        
         if (!codeVerifier) {
             throw new Error('No code verifier found');
         }
@@ -172,8 +172,6 @@ class PomodorifyApp {
         });
 
         if (!response.ok) {
-            const errorData = await response.text();
-            console.error('Token exchange failed:', errorData);
             throw new Error('Failed to exchange code for token');
         }
 
@@ -181,7 +179,7 @@ class PomodorifyApp {
         this.saveTokensToStorage(tokenData);
         
         // Clean up the code verifier
-        sessionStorage.removeItem('code_verifier');
+        localStorage.removeItem('code_verifier');
     }
 
     async loadPlaylists() {
@@ -202,6 +200,13 @@ class PomodorifyApp {
             }
 
             const data = await response.json();
+            
+            if (!data.items || data.items.length === 0) {
+                const select = document.getElementById('playlist-select');
+                select.innerHTML = '<option value="">No playlists found</option>';
+                return;
+            }
+            
             this.populatePlaylistSelect(data.items);
         } catch (error) {
             console.error('Failed to load playlists:', error);

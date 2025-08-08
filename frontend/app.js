@@ -255,19 +255,6 @@ class PomodorifyApp {
         });
     }
 
-    updatePlaylistName() {
-        const playlistSelect = document.getElementById('playlist-select');
-        const playlistName = playlistSelect.options[playlistSelect.selectedIndex].textContent;
-        
-        if (playlistSelect.value && playlistName !== '-- Select a playlist --') {
-            const timestamp = this.getShortTimestamp();
-            const defaultName = `POMO_${playlistName}_${timestamp}`;
-            
-            const nameInput = document.getElementById('preview-playlist-name');
-            nameInput.value = defaultName;
-        }
-    }
-
     getShortTimestamp() {
         const now = new Date();
         const month = now.toLocaleDateString('en-US', { month: 'short' });

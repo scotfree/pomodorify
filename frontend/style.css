@@ -170,7 +170,11 @@ button {
     cursor: pointer;
     font-size: 16px;
     font-weight: 600;
+    font-family: 'Orbitron', monospace;
+    text-transform: uppercase;
+    letter-spacing: 1px;
     transition: background-color 0.2s ease;
+    margin: 0.5rem;
 }
 
 button:hover {

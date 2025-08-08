@@ -253,9 +253,6 @@ class PomodorifyApp {
             option.textContent = playlist.name;
             select.appendChild(option);
         });
-
-        // Add event listener for automatic name generation
-        select.addEventListener('change', () => this.updatePlaylistName());
     }
 
     updatePlaylistName() {
@@ -266,7 +263,7 @@ class PomodorifyApp {
             const timestamp = this.getShortTimestamp();
             const defaultName = `POMO_${playlistName}_${timestamp}`;
             
-            const nameInput = document.getElementById('playlist-name');
+            const nameInput = document.getElementById('preview-playlist-name');
             nameInput.value = defaultName;
         }
     }
@@ -289,7 +286,6 @@ class PomodorifyApp {
 
         const playlistId = document.getElementById('playlist-select').value;
         const duration = parseInt(document.getElementById('duration').value);
-        const playlistName = document.getElementById('playlist-name').value;
 
         if (!playlistId) {
             alert('Please select a playlist.');
@@ -318,9 +314,13 @@ class PomodorifyApp {
                     duration_ms: item.track.duration_ms,
                 }));
 
+            // Get source playlist name
+            const playlistSelect = document.getElementById('playlist-select');
+            const sourcePlaylistName = playlistSelect.options[playlistSelect.selectedIndex].textContent;
+
             // Select tracks for the duration
             const selectedTracks = this.selectTracksForDuration(tracks, duration);
-            this.displayPreview(selectedTracks, playlistName);
+            this.displayPreview(selectedTracks, sourcePlaylistName);
         } catch (error) {
             console.error('Failed to generate playlist:', error);
             alert('Failed to generate playlist. Please try again.');
@@ -349,10 +349,19 @@ class PomodorifyApp {
         return selectedTracks;
     }
 
-    displayPreview(tracks, playlistName) {
+    displayPreview(tracks, sourcePlaylistName) {
         const totalDuration = tracks.reduce((sum, track) => sum + track.duration_ms, 0);
 
+        // Generate default name
+        const timestamp = this.getShortTimestamp();
+        const defaultName = `POMO_${sourcePlaylistName}_${timestamp}`;
+        
+        // Set the name field with default name
+        const nameInput = document.getElementById('preview-playlist-name');
+        nameInput.value = defaultName;
+
         // Update preview info
+        document.getElementById('preview-source-name').textContent = sourcePlaylistName;
         document.getElementById('preview-duration').textContent = this.formatDuration(totalDuration);
         document.getElementById('preview-track-count').textContent = tracks.length.toString();
 
@@ -374,7 +383,7 @@ class PomodorifyApp {
         });
 
         // Store tracks for saving
-        window.currentPreview = { tracks, totalDuration: totalDuration, playlistName };
+        window.currentPreview = { tracks, totalDuration: totalDuration, sourcePlaylistName };
 
         // Show preview section
         this.showPreviewSection();
@@ -392,6 +401,15 @@ class PomodorifyApp {
             return;
         }
 
+        // Get playlist name, use default if empty
+        const nameInput = document.getElementById('preview-playlist-name');
+        let playlistName = nameInput.value.trim();
+        
+        if (!playlistName) {
+            const timestamp = this.getShortTimestamp();
+            playlistName = `POMO_${preview.sourcePlaylistName}_${timestamp}`;
+        }
+
         try {
             // Get current user
             const userResponse = await fetch('https://api.spotify.com/v1/me', {
@@ -407,7 +425,6 @@ class PomodorifyApp {
             const user = await userResponse.json();
 
             // Create playlist
-            const playlistName = preview.playlistName || `Pomodoro Playlist (${this.formatDuration(preview.totalDuration)})`;
             const createResponse = await fetch(`https://api.spotify.com/v1/users/${user.id}/playlists`, {
                 method: 'POST',
                 headers: {

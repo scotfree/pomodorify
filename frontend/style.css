@@ -162,36 +162,55 @@ select option:hover {
 }
 
 button {
-    background-color: #1db954;
-    color: white;
-    border: none;
-    padding: 12px 24px;
-    border-radius: 50px;
+    background: linear-gradient(45deg, #1db954, #1ed760);
+    color: #e6e6fa;
+    border: 2px solid #1db954;
+    padding: 1rem 2rem;
+    border-radius: 8px;
     cursor: pointer;
-    font-size: 16px;
-    font-weight: 600;
+    font-size: 1.1rem;
+    font-weight: 700;
     font-family: 'Orbitron', monospace;
     text-transform: uppercase;
     letter-spacing: 1px;
-    transition: background-color 0.2s ease;
+    transition: all 0.3s ease;
+    box-shadow: 
+        0 0 20px rgba(29, 185, 84, 0.6),
+        inset 0 0 15px rgba(230, 230, 250, 0.1);
     margin: 0.5rem;
 }
 
 button:hover {
-    background-color: #1ed760;
+    background: linear-gradient(45deg, #1ed760, #1db954);
+    box-shadow: 
+        0 0 30px #1db954,
+        0 0 40px rgba(29, 185, 84, 0.8),
+        inset 0 0 20px rgba(230, 230, 250, 0.2);
+    transform: translateY(-2px);
 }
 
 button:disabled {
-    background-color: #666;
+    background: linear-gradient(45deg, #666, #888);
+    border-color: #666;
     cursor: not-allowed;
+    box-shadow: none;
+    transform: none;
 }
 
 .back-button {
-    background-color: #4a90e2;
+    background: linear-gradient(45deg, #4a90e2, #357abd);
+    border-color: #4a90e2;
+    box-shadow: 
+        0 0 20px rgba(74, 144, 226, 0.6),
+        inset 0 0 15px rgba(230, 230, 250, 0.1);
 }
 
 .back-button:hover {
-    background-color: #357abd;
+    background: linear-gradient(45deg, #357abd, #4a90e2);
+    box-shadow: 
+        0 0 30px #4a90e2,
+        0 0 40px rgba(74, 144, 226, 0.8),
+        inset 0 0 20px rgba(230, 230, 250, 0.2);
 }
 
 .button-group {

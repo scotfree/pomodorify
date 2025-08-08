@@ -24,6 +24,7 @@ class PomodorifyApp {
         const regenerateButton = document.getElementById('regenerate-button');
         const createAnotherButton = document.getElementById('create-another-button');
         const logoutButton = document.getElementById('logout-button');
+        const backButton = document.getElementById('back-button');
 
         loginButton?.addEventListener('click', () => this.login());
         generateButton?.addEventListener('click', () => this.generatePlaylist());
@@ -31,6 +32,7 @@ class PomodorifyApp {
         regenerateButton?.addEventListener('click', () => this.generatePlaylist());
         createAnotherButton?.addEventListener('click', () => this.showPlaylistSection());
         logoutButton?.addEventListener('click', () => this.logout());
+        backButton?.addEventListener('click', () => this.showPlaylistSection());
     }
 
     loadTokensFromStorage() {

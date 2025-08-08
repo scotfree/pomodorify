@@ -10,14 +10,14 @@
 <body>
     <div class="container">
         <h1>Pomodorify</h1>
-        <p>Create time-limited playlists for your Pomodoro sessions</p>
+        <p>Create playlist timers.</p>
         
         <div id="login-section">
             <button id="login-button">Log in with Spotify</button>
         </div>
 
         <div id="playlist-section" style="display: none;">
-            <h2>Create a Time-Limited Playlist</h2>
+            <h2>Create playlist timers.</h2>
             <div class="playlist-selection-frame">
                 <label for="playlist-select" id="playlist-select-label">Select a playlist:</label>
                 <select id="playlist-select"></select>
@@ -45,6 +45,7 @@
             </div>
             <div class="track-list" id="preview-tracks"></div>
             <div class="button-group">
+                <button id="back-button" class="back-button">Back</button>
                 <button id="regenerate-button">Regenerate</button>
                 <button id="save-button">Save Playlist</button>
             </div>

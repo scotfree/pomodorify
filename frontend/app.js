@@ -27,7 +27,6 @@ class PomodorifyApp {
         const backButton = document.getElementById('back-button');
         const discoverWeeklyButton = document.getElementById('discover-weekly-button');
         const searchInput = document.getElementById('search-input');
-        const searchButton = document.getElementById('search-button');
 
         loginButton?.addEventListener('click', () => this.login());
         generateButton?.addEventListener('click', () => this.generatePlaylist());
@@ -37,10 +36,9 @@ class PomodorifyApp {
         logoutButton?.addEventListener('click', () => this.logout());
         backButton?.addEventListener('click', () => this.showPlaylistSection());
         discoverWeeklyButton?.addEventListener('click', () => this.useDiscoverWeekly());
-        searchButton?.addEventListener('click', () => this.generatePlaylistFromSearch());
         searchInput?.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') {
-                this.generatePlaylistFromSearch();
+                this.generatePlaylist();
             }
         });
     }
@@ -278,19 +276,32 @@ class PomodorifyApp {
     }
 
     async generatePlaylist() {
+        console.log('generatePlaylist called');
         if (!(await this.ensureValidToken())) {
             this.showLoginSection();
             return;
         }
 
+        const searchQuery = document.getElementById('search-input').value.trim();
         const playlistId = document.getElementById('playlist-select').value;
         const duration = parseInt(document.getElementById('duration').value);
 
-        if (!playlistId) {
-            alert('Please select a playlist.');
+        console.log('Search query:', searchQuery, 'Playlist ID:', playlistId, 'Duration:', duration);
+
+        // Check if search input is provided
+        if (searchQuery) {
+            console.log('Using search input, calling generatePlaylistFromSearch');
+            await this.generatePlaylistFromSearch();
             return;
         }
 
+        // Fall back to playlist selection
+        if (!playlistId) {
+            alert('Please select a playlist or enter a search term.');
+            return;
+        }
+
+        console.log('Using playlist selection');
         try {
             // Get playlist tracks
             const tracksResponse = await fetch(`https://api.spotify.com/v1/playlists/${playlistId}/tracks`, {
@@ -333,22 +344,36 @@ class PomodorifyApp {
         }
 
         try {
-            // Search for Discover Weekly playlist
-            const searchResponse = await fetch('https://api.spotify.com/v1/search?q=Discover%20Weekly&type=playlist&limit=20', {
-                headers: {
-                    'Authorization': `Bearer ${this.accessToken}`,
-                },
-            });
+            // Search for Discover Weekly playlist - try multiple search terms
+            const searchTerms = ['Discover Weekly', 'discover weekly', 'DiscoverWeekly'];
+            let discoverWeekly = null;
+            
+            for (const term of searchTerms) {
+                console.log(`Searching for: ${term}`);
+                const searchResponse = await fetch(`https://api.spotify.com/v1/search?q=${encodeURIComponent(term)}&type=playlist&limit=20`, {
+                    headers: {
+                        'Authorization': `Bearer ${this.accessToken}`,
+                    },
+                });
 
-            if (!searchResponse.ok) {
-                throw new Error('Failed to search for Discover Weekly');
+                if (!searchResponse.ok) {
+                    console.log(`Search failed for ${term}:`, searchResponse.status);
+                    continue;
+                }
+
+                const searchData = await searchResponse.json();
+                console.log(`Search results for ${term}:`, searchData.playlists.items.length, 'playlists found');
+                
+                discoverWeekly = searchData.playlists.items.find(playlist => 
+                    playlist.name.toLowerCase().includes('discover weekly') && 
+                    playlist.owner.display_name === 'Spotify'
+                );
+                
+                if (discoverWeekly) {
+                    console.log('Found Discover Weekly:', discoverWeekly);
+                    break;
+                }
             }
-
-            const searchData = await searchResponse.json();
-            const discoverWeekly = searchData.playlists.items.find(playlist => 
-                playlist.name === 'Discover Weekly' && 
-                playlist.owner.display_name === 'Spotify'
-            );
 
             if (!discoverWeekly) {
                 alert('Discover Weekly playlist not found. Please select a playlist manually.');
@@ -386,6 +411,7 @@ class PomodorifyApp {
     }
 
     async generatePlaylistFromSearch() {
+        console.log('generatePlaylistFromSearch called');
         if (!(await this.ensureValidToken())) {
             this.showLoginSection();
             return;
@@ -394,12 +420,15 @@ class PomodorifyApp {
         const searchQuery = document.getElementById('search-input').value.trim();
         const duration = parseInt(document.getElementById('duration').value);
 
+        console.log('Search query:', searchQuery, 'Duration:', duration);
+
         if (!searchQuery) {
             alert('Please enter a search term.');
             return;
         }
 
         try {
+            console.log('Searching for tracks...');
             // Search for tracks
             const searchResponse = await fetch(`https://api.spotify.com/v1/search?q=${encodeURIComponent(searchQuery)}&type=track&limit=50`, {
                 headers: {
@@ -412,6 +441,8 @@ class PomodorifyApp {
             }
 
             const searchData = await searchResponse.json();
+            console.log('Search results:', searchData.tracks.items.length, 'tracks found');
+            
             const tracks = searchData.tracks.items.map(track => ({
                 uri: track.uri,
                 name: track.name,
@@ -421,6 +452,7 @@ class PomodorifyApp {
 
             // Select tracks for the duration
             const selectedTracks = this.selectTracksForDuration(tracks, duration);
+            console.log('Selected tracks:', selectedTracks.length);
             
             // Create sanitized search string for playlist name
             const sanitizedSearch = searchQuery
@@ -429,6 +461,7 @@ class PomodorifyApp {
                 .trim()
                 .substring(0, 30); // Limit to 30 characters
             
+            console.log('Displaying preview with source:', `search_${sanitizedSearch}`);
             this.displayPreview(selectedTracks, `search_${sanitizedSearch}`);
         } catch (error) {
             console.error('Failed to generate playlist from search:', error);

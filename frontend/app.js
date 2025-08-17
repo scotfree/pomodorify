@@ -318,11 +318,15 @@ class PomodorifyApp {
             return;
         }
 
-        const searchQuery = document.getElementById('search-input').value.trim();
+        const searchInputElement = document.getElementById('search-input');
+        const searchQuery = searchInputElement ? searchInputElement.value.trim() : '';
         const playlistId = document.getElementById('playlist-select').value;
         const duration = parseInt(document.getElementById('duration').value);
 
+        console.log('Search input element found:', !!searchInputElement);
         console.log('Search query:', searchQuery, 'Playlist ID:', playlistId, 'Duration:', duration);
+        console.log('Search query length:', searchQuery.length);
+        console.log('Search query truthy check:', !!searchQuery);
 
         // Check if search input is provided
         if (searchQuery) {

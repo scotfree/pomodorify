@@ -6,6 +6,7 @@ class PomodorifyApp {
         this.accessToken = null;
         this.refreshToken = null;
         this.tokenExpiry = null;
+        this.discoverWeeklyPlaylistId = null;
 
         this.initializeApp();
     }
@@ -240,10 +241,45 @@ class PomodorifyApp {
                 return;
             }
             
+            // Find Discover Weekly playlist
+            this.findDiscoverWeeklyPlaylist(finalPlaylists);
+            
             this.populatePlaylistSelect(finalPlaylists);
         } catch (error) {
             console.error('Failed to load playlists:', error);
             alert('Failed to load playlists. Please try again.');
+        }
+    }
+
+    findDiscoverWeeklyPlaylist(playlists) {
+        // Look for the most recent Discover Weekly playlist
+        const discoverWeeklyPlaylists = playlists.filter(playlist => 
+            playlist.name.toLowerCase().includes('discover weekly') && 
+            playlist.owner.display_name === 'Spotify'
+        );
+        
+        if (discoverWeeklyPlaylists.length > 0) {
+            // Get the most recent one (they're usually ordered by creation date)
+            this.discoverWeeklyPlaylistId = discoverWeeklyPlaylists[0].id;
+            console.log('Found Discover Weekly playlist:', this.discoverWeeklyPlaylistId);
+            
+            // Enable the Discover Weekly button
+            const discoverWeeklyButton = document.getElementById('discover-weekly-button');
+            if (discoverWeeklyButton) {
+                discoverWeeklyButton.disabled = false;
+                discoverWeeklyButton.style.opacity = '1';
+            }
+        } else {
+            // No Discover Weekly playlist found
+            this.discoverWeeklyPlaylistId = null;
+            console.log('No Discover Weekly playlist found');
+            
+            // Disable the Discover Weekly button
+            const discoverWeeklyButton = document.getElementById('discover-weekly-button');
+            if (discoverWeeklyButton) {
+                discoverWeeklyButton.disabled = true;
+                discoverWeeklyButton.style.opacity = '0.5';
+            }
         }
     }
 
@@ -343,45 +379,16 @@ class PomodorifyApp {
             return;
         }
 
+        if (!this.discoverWeeklyPlaylistId) {
+            alert('Discover Weekly playlist not available. Please select a playlist manually.');
+            return;
+        }
+
         try {
-            // Search for Discover Weekly playlist - try multiple search terms
-            const searchTerms = ['Discover Weekly', 'discover weekly', 'DiscoverWeekly'];
-            let discoverWeekly = null;
+            console.log('Using stored Discover Weekly playlist ID:', this.discoverWeeklyPlaylistId);
             
-            for (const term of searchTerms) {
-                console.log(`Searching for: ${term}`);
-                const searchResponse = await fetch(`https://api.spotify.com/v1/search?q=${encodeURIComponent(term)}&type=playlist&limit=20`, {
-                    headers: {
-                        'Authorization': `Bearer ${this.accessToken}`,
-                    },
-                });
-
-                if (!searchResponse.ok) {
-                    console.log(`Search failed for ${term}:`, searchResponse.status);
-                    continue;
-                }
-
-                const searchData = await searchResponse.json();
-                console.log(`Search results for ${term}:`, searchData.playlists.items.length, 'playlists found');
-                
-                discoverWeekly = searchData.playlists.items.find(playlist => 
-                    playlist.name.toLowerCase().includes('discover weekly') && 
-                    playlist.owner.display_name === 'Spotify'
-                );
-                
-                if (discoverWeekly) {
-                    console.log('Found Discover Weekly:', discoverWeekly);
-                    break;
-                }
-            }
-
-            if (!discoverWeekly) {
-                alert('Discover Weekly playlist not found. Please select a playlist manually.');
-                return;
-            }
-
-            // Get playlist tracks
-            const tracksResponse = await fetch(`https://api.spotify.com/v1/playlists/${discoverWeekly.id}/tracks`, {
+            // Get playlist tracks using the stored ID
+            const tracksResponse = await fetch(`https://api.spotify.com/v1/playlists/${this.discoverWeeklyPlaylistId}/tracks`, {
                 headers: {
                     'Authorization': `Bearer ${this.accessToken}`,
                 },

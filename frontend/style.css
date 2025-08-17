@@ -429,6 +429,15 @@ button:disabled {
         inset 0 0 20px rgba(230, 230, 250, 0.2);
 }
 
+.discover-weekly-button:disabled {
+    background: linear-gradient(45deg, #666, #888);
+    border-color: #666;
+    cursor: not-allowed;
+    box-shadow: none;
+    transform: none;
+    opacity: 0.5;
+}
+
 /* Responsive design */
 @media (max-width: 768px) {
     .container {

@@ -206,8 +206,13 @@ class PomodorifyApp {
             let offset = 0;
             const limit = 50; // Spotify's max per request
             
-            // Fetch playlists in batches until we have 100 or no more available
-            while (allPlaylists.length < 100) {
+            // Show loading state
+            const select = document.getElementById('playlist-select');
+            select.innerHTML = '<option value="">Loading playlists...</option>';
+            select.disabled = true;
+            
+            // Fetch ALL playlists in batches until no more available
+            while (true) {
                 const response = await fetch(`https://api.spotify.com/v1/me/playlists?limit=${limit}&offset=${offset}`, {
                     headers: {
                         'Authorization': `Bearer ${this.accessToken}`,
@@ -224,6 +229,9 @@ class PomodorifyApp {
                 const filteredPlaylists = data.items.filter(playlist => !playlist.name.startsWith('POMO_'));
                 allPlaylists.push(...filteredPlaylists);
                 
+                // Update loading message with progress
+                select.innerHTML = `<option value="">Loading playlists... (${allPlaylists.length} found)</option>`;
+                
                 // If we got fewer than the limit, we've reached the end
                 if (data.items.length < limit) {
                     break;
@@ -232,22 +240,31 @@ class PomodorifyApp {
                 offset += limit;
             }
             
-            // Limit to 100 playlists
-            const finalPlaylists = allPlaylists.slice(0, 100);
+            console.log(`Loaded ${allPlaylists.length} playlists (excluding POMO_ playlists)`);
             
-            if (finalPlaylists.length === 0) {
-                const select = document.getElementById('playlist-select');
+            if (allPlaylists.length === 0) {
                 select.innerHTML = '<option value="">No playlists found</option>';
+                select.disabled = false;
                 return;
             }
             
-            // Find Discover Weekly playlist
-            this.findDiscoverWeeklyPlaylist(finalPlaylists);
+            // Sort playlists alphabetically by name
+            const sortedPlaylists = allPlaylists.sort((a, b) => {
+                return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+            });
             
-            this.populatePlaylistSelect(finalPlaylists);
+            // Find Discover Weekly playlist
+            this.findDiscoverWeeklyPlaylist(sortedPlaylists);
+            
+            this.populatePlaylistSelect(sortedPlaylists);
         } catch (error) {
             console.error('Failed to load playlists:', error);
             alert('Failed to load playlists. Please try again.');
+            
+            // Reset select on error
+            const select = document.getElementById('playlist-select');
+            select.innerHTML = '<option value="">Error loading playlists</option>';
+            select.disabled = false;
         }
     }
 
@@ -299,6 +316,9 @@ class PomodorifyApp {
             option.textContent = playlist.name;
             select.appendChild(option);
         });
+        
+        // Re-enable the select element
+        select.disabled = false;
     }
 
     getShortTimestamp() {

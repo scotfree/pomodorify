@@ -20,7 +20,7 @@ class PomodorifyApp {
     }
 
     setRandomBackground() {
-        const backgrounds = ['assets/bg1.jpg', 'assets/bg2.jpg', 'assets/bg3.jpg', 'assets/bg4.jpg', 'assets/bg5.jpg'];
+        const backgrounds = ['assets/spaceship.jpg', 'assets/tta_icetroid.jpg', 'assets/tta_city.jpg', 'assets/tta_city2.jpg'];
         const randomBg = backgrounds[Math.floor(Math.random() * backgrounds.length)];
         document.body.style.backgroundImage = `url('${randomBg}')`;
     }

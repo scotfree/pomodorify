@@ -2,7 +2,7 @@ class PomodorifyApp {
     constructor() {
         this.clientId = 'bac207f49dc041e0a2e8a92691c7a23a';
         this.redirectUri = 'https://pomodorifi.es';
-        this.scope = 'user-read-private user-read-email playlist-read-private playlist-modify-private';
+        this.scope = 'user-read-private user-read-email playlist-read-private playlist-modify-private user-modify-playback-state';
         this.accessToken = null;
         this.refreshToken = null;
         this.tokenExpiry = null;
@@ -37,6 +37,7 @@ class PomodorifyApp {
         const loginButton = document.getElementById('login-button');
         const generateButton = document.getElementById('generate-button');
         const saveButton = document.getElementById('save-button');
+        const playButton = document.getElementById('play-button');
         const regenerateButton = document.getElementById('regenerate-button');
         const createAnotherButton = document.getElementById('create-another-button');
         const logoutButton = document.getElementById('logout-button');
@@ -47,6 +48,7 @@ class PomodorifyApp {
         loginButton?.addEventListener('click', () => this.login());
         generateButton?.addEventListener('click', () => this.generatePlaylist());
         saveButton?.addEventListener('click', () => this.savePlaylist());
+        playButton?.addEventListener('click', () => this.playPlaylist());
         regenerateButton?.addEventListener('click', () => this.generatePlaylist());
         createAnotherButton?.addEventListener('click', () => this.showPlaylistSection());
         logoutButton?.addEventListener('click', () => this.logout());
@@ -537,7 +539,7 @@ class PomodorifyApp {
         return selectedTracks;
     }
 
-    displayPreview(tracks, sourcePlaylistName) {
+    async displayPreview(tracks, sourcePlaylistName) {
         const totalDuration = tracks.reduce((sum, track) => sum + track.duration_ms, 0);
 
         // Generate default name
@@ -580,6 +582,9 @@ class PomodorifyApp {
 
         // Store tracks for saving
         window.currentPreview = { tracks, totalDuration: totalDuration, sourcePlaylistName };
+
+        // Check Premium status and enable/disable PLAY button
+        await this.updatePlayButtonStatus();
 
         // Show preview section
         this.showPreviewSection();
@@ -718,6 +723,220 @@ class PomodorifyApp {
         this.tokenExpiry = null;
         this.updateUI();
         alert('Logged out successfully!');
+    }
+
+    // Device and playback control methods
+    async getAvailableDevices() {
+        if (!(await this.ensureValidToken())) {
+            return [];
+        }
+
+        try {
+            const response = await fetch('https://api.spotify.com/v1/me/player/devices', {
+                headers: {
+                    'Authorization': `Bearer ${this.accessToken}`,
+                },
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to fetch devices');
+            }
+
+            const data = await response.json();
+            return data.devices || [];
+        } catch (error) {
+            console.error('Failed to get devices:', error);
+            return [];
+        }
+    }
+
+    async checkUserPremiumStatus() {
+        if (!(await this.ensureValidToken())) {
+            return false;
+        }
+
+        try {
+            const response = await fetch('https://api.spotify.com/v1/me', {
+                headers: {
+                    'Authorization': `Bearer ${this.accessToken}`,
+                },
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to get user info');
+            }
+
+            const user = await response.json();
+            return user.product === 'premium';
+        } catch (error) {
+            console.error('Failed to check premium status:', error);
+            return false;
+        }
+    }
+
+    async clearQueue() {
+        if (!(await this.ensureValidToken())) {
+            return false;
+        }
+
+        try {
+            // Spotify doesn't have a direct "clear queue" endpoint
+            // We'll skip tracks until we reach the end
+            // This is a workaround - we'll skip a large number of tracks
+            const response = await fetch('https://api.spotify.com/v1/me/player/next', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${this.accessToken}`,
+                },
+            });
+
+            // This will fail if there are no more tracks, which is what we want
+            return !response.ok;
+        } catch (error) {
+            console.error('Failed to clear queue:', error);
+            return false;
+        }
+    }
+
+    async startPlayback(deviceId, trackUri) {
+        if (!(await this.ensureValidToken())) {
+            return false;
+        }
+
+        try {
+            const body = {
+                uris: [trackUri]
+            };
+
+            const url = deviceId ? 
+                `https://api.spotify.com/v1/me/player/play?device_id=${deviceId}` :
+                'https://api.spotify.com/v1/me/player/play';
+
+            const response = await fetch(url, {
+                method: 'PUT',
+                headers: {
+                    'Authorization': `Bearer ${this.accessToken}`,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(body),
+            });
+
+            return response.ok;
+        } catch (error) {
+            console.error('Failed to start playback:', error);
+            return false;
+        }
+    }
+
+    async addTrackToQueue(trackUri) {
+        if (!(await this.ensureValidToken())) {
+            return false;
+        }
+
+        try {
+            const response = await fetch(`https://api.spotify.com/v1/me/player/queue?uri=${encodeURIComponent(trackUri)}`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${this.accessToken}`,
+                },
+            });
+
+            return response.ok;
+        } catch (error) {
+            console.error('Failed to add track to queue:', error);
+            return false;
+        }
+    }
+
+    async playPlaylist() {
+        if (!(await this.ensureValidToken())) {
+            this.showLoginSection();
+            return;
+        }
+
+        const preview = window.currentPreview;
+        if (!preview || !preview.tracks || preview.tracks.length === 0) {
+            alert('No playlist to play. Please generate a playlist first.');
+            return;
+        }
+
+        // Check if user has Premium
+        const isPremium = await this.checkUserPremiumStatus();
+        if (!isPremium) {
+            alert('This feature requires Spotify Premium. Please upgrade your account.');
+            return;
+        }
+
+        // Get available devices
+        const devices = await this.getAvailableDevices();
+        const activeDevices = devices.filter(device => device.is_active);
+        
+        if (activeDevices.length === 0) {
+            if (devices.length === 0) {
+                alert('No Spotify devices found. Please open Spotify on one of your devices and try again.');
+                return;
+            } else {
+                // Let user choose from available devices
+                const deviceNames = devices.map(device => device.name).join(', ');
+                alert(`No active devices found. Available devices: ${deviceNames}. Please start playback on one of these devices and try again.`);
+                return;
+            }
+        }
+
+        // Use the first active device
+        const deviceId = activeDevices[0].id;
+        const tracks = preview.tracks;
+
+        try {
+            // Clear existing queue by skipping tracks
+            await this.clearQueue();
+
+            // Start playback of first track
+            const firstTrackUri = tracks[0].uri;
+            const playbackStarted = await this.startPlayback(deviceId, firstTrackUri);
+            
+            if (!playbackStarted) {
+                alert('Failed to start playback. Please make sure Spotify is active on your device.');
+                return;
+            }
+
+            // Add remaining tracks to queue
+            for (let i = 1; i < tracks.length; i++) {
+                const success = await this.addTrackToQueue(tracks[i].uri);
+                if (!success) {
+                    console.warn(`Failed to queue track ${i + 1}: ${tracks[i].name}`);
+                }
+                // Add small delay to avoid rate limiting
+                await new Promise(resolve => setTimeout(resolve, 100));
+            }
+
+            // Success - no message needed as per requirements
+        } catch (error) {
+            console.error('Failed to play playlist:', error);
+            alert('Failed to play playlist. Please try again.');
+        }
+    }
+
+    async updatePlayButtonStatus() {
+        const playButton = document.getElementById('play-button');
+        if (!playButton) return;
+
+        if (!(await this.ensureValidToken())) {
+            playButton.disabled = true;
+            playButton.style.opacity = '0.5';
+            return;
+        }
+
+        const isPremium = await this.checkUserPremiumStatus();
+        if (!isPremium) {
+            playButton.disabled = true;
+            playButton.style.opacity = '0.5';
+            playButton.title = 'Requires Spotify Premium';
+        } else {
+            playButton.disabled = false;
+            playButton.style.opacity = '1';
+            playButton.title = '';
+        }
     }
 }
 

@@ -245,6 +245,22 @@ button:disabled {
         inset 0 0 20px rgba(230, 230, 250, 0.2);
 }
 
+#play-button {
+    background: linear-gradient(45deg, #ff6b35, #f7931e);
+    border-color: #ff6b35;
+    box-shadow: 
+        0 0 20px rgba(255, 107, 53, 0.6),
+        inset 0 0 15px rgba(230, 230, 250, 0.1);
+}
+
+#play-button:hover {
+    background: linear-gradient(45deg, #f7931e, #ff6b35);
+    box-shadow: 
+        0 0 30px #ff6b35,
+        0 0 40px rgba(255, 107, 53, 0.8),
+        inset 0 0 20px rgba(230, 230, 250, 0.2);
+}
+
 #logout-button {
     background: linear-gradient(45deg, #2a2a2a, #404040);
     border-color: #2a2a2a;

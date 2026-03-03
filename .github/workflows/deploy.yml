@@ -27,4 +27,4 @@ jobs:
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           script: |
             cd ~/pomo && git pull
-            sudo cp ~/pomo/frontend/* /usr/share/nginx/html
+            sudo cp -r ~/pomo/frontend/* /usr/share/nginx/html

@@ -1,7 +1,11 @@
+import { formatDuration, selectTracksForDuration, generateRandomString, getShortTimestamp } from './utils.js';
+
 class PomodorifyApp {
     constructor() {
         this.clientId = 'bac207f49dc041e0a2e8a92691c7a23a';
-        this.redirectUri = 'https://pomodorifi.es';
+        this.redirectUri = window.location.hostname === '127.0.0.1'
+            ? `http://${window.location.host}`
+            : 'https://pomodorifi.es';
         this.scope = 'user-read-private user-read-email playlist-read-private playlist-modify-private user-modify-playback-state';
         this.accessToken = null;
         this.refreshToken = null;
@@ -80,16 +84,6 @@ class PomodorifyApp {
         localStorage.setItem('spotify_token_expiry', this.tokenExpiry.toString());
     }
 
-    // Generate a random string for PKCE
-    generateRandomString(length) {
-        const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-        let text = '';
-        for (let i = 0; i < length; i++) {
-            text += possible.charAt(Math.floor(Math.random() * possible.length));
-        }
-        return text;
-    }
-
     // Generate code challenge for PKCE
     async generateCodeChallenge(codeVerifier) {
         const encoder = new TextEncoder();
@@ -143,7 +137,7 @@ class PomodorifyApp {
 
     async login() {
         // Generate PKCE parameters
-        this.codeVerifier = this.generateRandomString(128);
+        this.codeVerifier = generateRandomString(128);
         const codeChallenge = await this.generateCodeChallenge(this.codeVerifier);
         
         // Store code verifier for later use
@@ -338,16 +332,6 @@ class PomodorifyApp {
         select.disabled = false;
     }
 
-    getShortTimestamp() {
-        const now = new Date();
-        const month = now.toLocaleDateString('en-US', { month: 'short' });
-        const day = now.getDate().toString().padStart(2, '0');
-        const hours = now.getHours().toString().padStart(2, '0');
-        const minutes = now.getMinutes().toString().padStart(2, '0');
-        
-        return `${month}${day}_${hours}${minutes}`;
-    }
-
     async generatePlaylist() {
         console.log('generatePlaylist called');
         if (!(await this.ensureValidToken())) {
@@ -406,7 +390,7 @@ class PomodorifyApp {
             const sourcePlaylistName = playlistSelect.options[playlistSelect.selectedIndex].textContent;
 
             // Select tracks for the duration
-            const selectedTracks = this.selectTracksForDuration(tracks, duration);
+            const selectedTracks = selectTracksForDuration(tracks, duration);
             this.displayPreview(selectedTracks, sourcePlaylistName);
         } catch (error) {
             console.error('Failed to generate playlist:', error);
@@ -450,7 +434,7 @@ class PomodorifyApp {
                 }));
 
             const duration = parseInt(document.getElementById('duration').value);
-            const selectedTracks = this.selectTracksForDuration(tracks, duration);
+            const selectedTracks = selectTracksForDuration(tracks, duration);
             this.displayPreview(selectedTracks, 'Discover Weekly');
         } catch (error) {
             console.error('Failed to use Discover Weekly:', error);
@@ -499,7 +483,7 @@ class PomodorifyApp {
             }));
 
             // Select tracks for the duration
-            const selectedTracks = this.selectTracksForDuration(tracks, duration);
+            const selectedTracks = selectTracksForDuration(tracks, duration);
             console.log('Selected tracks:', selectedTracks.length);
             
             // Create sanitized search string for playlist name
@@ -517,33 +501,11 @@ class PomodorifyApp {
         }
     }
 
-    selectTracksForDuration(tracks, durationMinutes) {
-        const durationLimit = durationMinutes * 60 * 1000; // Convert to milliseconds
-        const shuffledTracks = [...tracks].sort(() => Math.random() - 0.5);
-        
-        const selectedTracks = [];
-        let totalDuration = 0;
-
-        for (const track of shuffledTracks) {
-            if (totalDuration + track.duration_ms <= durationLimit) {
-                selectedTracks.push(track);
-                totalDuration += track.duration_ms;
-            } else {
-                // Add one more track even if it exceeds the limit
-                selectedTracks.push(track);
-                totalDuration += track.duration_ms;
-                break;
-            }
-        }
-
-        return selectedTracks;
-    }
-
     async displayPreview(tracks, sourcePlaylistName) {
         const totalDuration = tracks.reduce((sum, track) => sum + track.duration_ms, 0);
 
         // Generate default name
-        const timestamp = this.getShortTimestamp();
+        const timestamp = getShortTimestamp();
         let defaultName;
         
         if (sourcePlaylistName.startsWith('search_')) {
@@ -560,7 +522,7 @@ class PomodorifyApp {
 
         // Update preview info
         document.getElementById('preview-source-name').textContent = sourcePlaylistName;
-        document.getElementById('preview-duration').textContent = this.formatDuration(totalDuration);
+        document.getElementById('preview-duration').textContent = formatDuration(totalDuration);
         document.getElementById('preview-track-count').textContent = tracks.length.toString();
 
         // Display tracks
@@ -575,7 +537,7 @@ class PomodorifyApp {
                     <div class="track-name">${track.name}</div>
                     <div class="track-artist">${track.artist}</div>
                 </div>
-                <div class="track-duration">${this.formatDuration(track.duration_ms)}</div>
+                <div class="track-duration">${formatDuration(track.duration_ms)}</div>
             `;
             trackList.appendChild(trackItem);
         });
@@ -607,7 +569,7 @@ class PomodorifyApp {
         let playlistName = nameInput.value.trim();
         
         if (!playlistName) {
-            const timestamp = this.getShortTimestamp();
+            const timestamp = getShortTimestamp();
             playlistName = `POMO_${preview.sourcePlaylistName}_${timestamp}`;
         }
 

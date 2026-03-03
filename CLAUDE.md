@@ -10,15 +10,41 @@ Deployed at `https://pomodorifi.es`.
 
 ## Running Locally
 
-Serve the `frontend/` directory with any static file server:
-
 ```bash
 cd frontend && python3 -m http.server 8080
-# or
-npx serve frontend
 ```
 
-For OAuth to work locally, `http://localhost:8080` (or whichever port) must be added as a redirect URI in the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard) for this app, **and** `this.redirectUri` in `app.js` must be temporarily changed to match.
+Open `http://127.0.0.1:8080` — the redirect URI is auto-detected based on hostname. Use `127.0.0.1` not `localhost` — Spotify rejects `localhost` as insecure in the Developer Dashboard.
+
+`http://127.0.0.1:8080` is already registered in the Spotify Developer Dashboard.
+
+## Tests
+
+```bash
+node tests/test.mjs
+```
+
+Pure logic functions are in `frontend/utils.js` (ES module). Tests cover `formatDuration`, `selectTracksForDuration`, and `generateRandomString`. The `selectTracksForDuration` function accepts an injectable shuffle function as a third argument (defaults to `Math.random`).
+
+## Deployment
+
+Push to `main` — GitHub Actions runs tests then deploys automatically via SSH to the nginx server.
+
+Manual deploy (if needed):
+```bash
+ssh ec2-user@54.176.238.172
+cd ~/pomo && git pull
+sudo cp -r ~/pomo/frontend/* /usr/share/nginx/html
+```
+
+SSL cert renewal (run when cert needs refreshing):
+```bash
+sudo systemctl stop nginx
+sudo certbot renew
+sudo systemctl start nginx
+```
+
+The deploy SSH key is stored as `DEPLOY_SSH_KEY` in GitHub Actions secrets.
 
 ## Architecture
 
@@ -35,9 +61,7 @@ Everything lives in a single `PomodorifyApp` class (`frontend/app.js`). The UI h
 
 **Playback** (Premium-only): starts first track via `PUT /me/player/play` on the active device, then queues remaining tracks one by one with a 100ms delay between calls. `window.currentPreview` holds the in-progress track list between preview and save/play.
 
-**Hardcoded values** in `app.js`:
-- `this.clientId` (line 3) — Spotify app Client ID
-- `this.redirectUri` (line 4) — must match Spotify dashboard and current environment
+**Pure logic functions** live in `frontend/utils.js` and are imported by `app.js` as ES modules. `index.html` uses `type="module"` on the script tag. `package.json` exists solely to tell Node to treat `.js` files as ES modules.
 
 ## Key Decisions
 
@@ -46,3 +70,6 @@ Everything lives in a single `PomodorifyApp` class (`frontend/app.js`). The UI h
 - The play button is disabled for non-Premium users (checked via `/me` user product field)
 - Background images are selected randomly on each page load from `frontend/assets/`
 - `test.html` is a manual browser-based test page for PKCE logic, not an automated test suite
+- Spotify rejects `localhost` as a redirect URI — use `127.0.0.1` instead
+- `package.json` has no dependencies — only `"type": "module"` to enable ES modules in Node
+- `selectTracksForDuration` shuffle is injectable to make it deterministically testable

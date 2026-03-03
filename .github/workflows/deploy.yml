@@ -1,0 +1,30 @@
+name: Test and Deploy
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  test-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Run tests
+        run: node tests/test.mjs
+
+      - name: Deploy to server
+        uses: appleboy/ssh-action@v1
+        with:
+          host: 54.176.238.172
+          username: ec2-user
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            cd ~/pomo && git pull
+            sudo cp ~/pomo/frontend/* /usr/share/nginx/html

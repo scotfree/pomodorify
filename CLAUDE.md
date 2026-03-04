@@ -63,12 +63,17 @@ Everything lives in a single `PomodorifyApp` class (`frontend/app.js`). The UI h
 
 **Pure logic functions** live in `frontend/utils.js` and are imported by `app.js` as ES modules. `index.html` uses `type="module"` on the script tag. `package.json` exists solely to tell Node to treat `.js` files as ES modules.
 
+## Next Steps
+
+- **Background image management** — currently requires editing the hardcoded array in `app.js` and manually deploying assets, which is painful. Explore a better approach.
+
 ## Key Decisions
 
 - `config/` is reference-only and not used at runtime (the app is client-only, no server reads it)
 - `POMO_` prefix on generated playlists is intentional — it's how the dropdown filters them out on reload
 - The play button is disabled for non-Premium users (checked via `/me` user product field)
-- Background images are selected randomly on each page load from `frontend/assets/`
+- Background images are selected randomly on each page load from `frontend/assets/` — `spaceship.jpg` was removed from the rotation due to rendering issues
+- `background-attachment: fixed` was removed — conflicted with `backdrop-filter: blur` on `.container`, causing non-deterministic gray backgrounds in both Safari and Chrome
 - `test.html` is a manual browser-based test page for PKCE logic, not an automated test suite
 - Spotify rejects `localhost` as a redirect URI — use `127.0.0.1` instead
 - `package.json` has no dependencies — only `"type": "module"` to enable ES modules in Node

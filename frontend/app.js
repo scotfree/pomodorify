@@ -25,7 +25,6 @@ class PomodorifyApp {
 
     setRandomBackground() {
         const backgrounds = [
-		'assets/spaceship.jpg', 
 		'assets/tta_icetroid.jpg',
 		'assets/robots.jpeg',
 		'assets/ringscape.jpeg',

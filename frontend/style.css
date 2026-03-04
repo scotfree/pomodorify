@@ -5,7 +5,7 @@ body {
     margin: 0;
     padding: 0;
     min-height: 100vh;
-    background: url('hmm.jpg') no-repeat center center fixed;
+    background: no-repeat center center;
     background-size: cover;
     color: #e6e6fa;
     text-align: center;

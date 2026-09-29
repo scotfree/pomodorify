@@ -1,0 +1,14 @@
+{
+  "name": "pomodorify-infra",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "synth": "cdk synth --profile personal",
+    "diff": "cdk diff --profile personal",
+    "deploy": "cdk deploy --profile personal"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "^2.271.0",
+    "constructs": "^10.8.1"
+  }
+}

@@ -48,10 +48,10 @@ Simply upload these files to your web server:
 1. Connect your GitHub repository
 2. Deploy automatically on push
 
-### Option 4: AWS S3 + CloudFront
-1. Upload files to S3 bucket
-2. Configure CloudFront distribution
-3. Point your domain to CloudFront
+### Option 4: AWS S3 + CloudFront (how pomodorifi.es is hosted)
+The CDK stack in `infra/` creates a private S3 bucket, a CloudFront distribution with an ACM
+certificate, Route 53 alias records, and a GitHub OIDC deploy role. GitHub Actions syncs
+`frontend/` to the bucket on every push to `main`.
 
 ## How It Works
 
@@ -73,4 +73,4 @@ Simply upload these files to your web server:
 - `frontend/index.html` - Main HTML file
 - `frontend/app.js` - JavaScript application logic
 - `frontend/style.css` - Styling
-- `config/` - Configuration files (for reference)
+- `infra/` - AWS CDK stack for hosting

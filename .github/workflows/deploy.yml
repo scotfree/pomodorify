@@ -3,6 +3,7 @@ name: Test and Deploy
 on:
   push:
     branches: [main]
+  workflow_dispatch:   # manual redeploy: gh workflow run deploy.yml
 
 permissions:
   id-token: write   # required for GitHub OIDC -> AWS role

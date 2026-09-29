@@ -33,8 +33,9 @@ class PomodorifyApp {
 		'assets/tta_city.jpg', 
 	'assets/tta_city2.jpg'];
         const randomBg = backgrounds[Math.floor(Math.random() * backgrounds.length)];
-        document.body.style.backgroundImage = `url('${randomBg}')`;
-        document.body.style.backgroundAttachment = 'scroll';
+        // Dark tint layered over the image keeps the text readable.
+        document.getElementById('bg').style.backgroundImage =
+            `linear-gradient(rgba(25, 25, 35, 0.4), rgba(25, 25, 35, 0.4)), url('${randomBg}')`;
     }
 
     setupEventListeners() {

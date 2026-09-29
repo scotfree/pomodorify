@@ -28,23 +28,18 @@ Pure logic functions are in `frontend/utils.js` (ES module). Tests cover `format
 
 ## Deployment
 
-Push to `main` — GitHub Actions runs tests then deploys automatically via SSH to the nginx server.
+Hosted as static files: private S3 bucket → CloudFront (ACM cert) → Route 53 alias for `pomodorifi.es`. All defined in the CDK stack at `infra/app.mjs` (plain JS, stack name `Pomodorify`, us-east-1).
 
-Manual deploy (if needed):
+Push to `main` — GitHub Actions runs tests, assumes the deploy role via OIDC, `aws s3 sync`s `frontend/` to the bucket, invalidates CloudFront, then curls the site as a smoke test. Repo variables (not secrets): `AWS_DEPLOY_ROLE_ARN`, `SITE_BUCKET`, `CLOUDFRONT_DISTRIBUTION_ID` — values come from the stack outputs.
+
+Infra changes:
 ```bash
-ssh ec2-user@54.176.238.172
-cd ~/pomo && git pull
-sudo cp -r ~/pomo/frontend/* /usr/share/nginx/html
+cd infra && npm install
+npm run diff     # cdk diff --profile personal
+npm run deploy   # cdk deploy --profile personal
 ```
 
-SSL cert renewal (run when cert needs refreshing):
-```bash
-sudo systemctl stop nginx
-sudo certbot renew
-sudo systemctl start nginx
-```
-
-The deploy SSH key is stored as `DEPLOY_SSH_KEY` in GitHub Actions secrets.
+**AWS profiles:** always use `--profile personal`. There is deliberately no default profile. The `atlas` profile belongs to the Stewardship Atlas project — never use or modify it from here.
 
 ## Architecture
 
@@ -69,7 +64,6 @@ Everything lives in a single `PomodorifyApp` class (`frontend/app.js`). The UI h
 
 ## Key Decisions
 
-- `config/` is reference-only and not used at runtime (the app is client-only, no server reads it)
 - `POMO_` prefix on generated playlists is intentional — it's how the dropdown filters them out on reload
 - The play button is disabled for non-Premium users (checked via `/me` user product field)
 - Background images are selected randomly on each page load from `frontend/assets/` — `spaceship.jpg` was removed from the rotation due to rendering issues
@@ -78,3 +72,9 @@ Everything lives in a single `PomodorifyApp` class (`frontend/app.js`). The UI h
 - Spotify rejects `localhost` as a redirect URI — use `127.0.0.1` instead
 - `package.json` has no dependencies — only `"type": "module"` to enable ES modules in Node
 - `selectTracksForDuration` shuffle is injectable to make it deterministically testable
+- Hosted on S3 + CloudFront instead of EC2 — the app is pure static, so an always-on server was wasted money. CloudFront is required (not bare S3 website hosting) because Spotify requires an HTTPS redirect URI
+- CDK stack account ID is pinned in `infra/app.mjs` so a deploy with the wrong profile fails instead of creating resources in another account
+- CDK avoids Lambda-backed custom resources (native OIDC provider, no `deleteExisting` on records) to keep the stack to plain CloudFormation resources
+- GitHub Actions authenticates to AWS via OIDC (role restricted to `main` of this repo) — no long-lived AWS keys in GitHub
+- Future server-side features: add a Lambda behind the same CloudFront distribution on `/api/*` (same origin, no CORS)
+- `config/` (old Flask-era config with a Spotify client secret) was removed; PKCE needs no secret

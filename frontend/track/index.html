@@ -52,6 +52,23 @@
                 </div>
             </div>
 
+            <details class="github-settings">
+                <summary>GitHub (log time to issues)</summary>
+                <p class="note" id="github-status"></p>
+                <div class="form-group">
+                    <label for="github-token">Token (classic, scopes: repo, project, read:org):</label>
+                    <input type="password" id="github-token" autocomplete="off" placeholder="ghp_…">
+                </div>
+                <div class="form-group">
+                    <label for="github-fields">Hours fields, tried in order:</label>
+                    <input type="text" id="github-fields">
+                </div>
+                <div class="button-group">
+                    <button id="github-save-button">SAVE</button>
+                    <button id="github-clear-button" class="back-button">REMOVE TOKEN</button>
+                </div>
+            </details>
+
             <div style="margin-top: 1rem;">
                 <button id="logout-button">Logout</button>
             </div>
@@ -67,9 +84,50 @@
             <div class="track-list" id="preview-tracks"></div>
 
             <div class="form-group">
-                <label for="project-input">Project (optional, for logging time):</label>
-                <input type="text" id="project-input" list="project-list" placeholder="No project: time isn't logged">
+                <label for="project-select">Project:</label>
+                <select id="project-select">
+                    <option value="none">No Project</option>
+                    <optgroup label="Projects" id="project-options"></optgroup>
+                    <optgroup label="Repos" id="repo-options"></optgroup>
+                </select>
+                <p id="github-note" class="note" hidden></p>
+            </div>
+
+            <div class="form-group" id="title-group">
+                <label for="project-input">Title (optional, for logging time locally):</label>
+                <input type="text" id="project-input" list="project-list" placeholder="No title: time isn't logged">
                 <datalist id="project-list"></datalist>
+            </div>
+
+            <div class="form-group" id="issue-group" hidden>
+                <label for="issue-select">Issue:</label>
+                <select id="issue-select"></select>
+                <p id="issue-note" class="note" hidden></p>
+            </div>
+
+            <div class="new-issue" id="new-issue-form" hidden>
+                <div class="form-group" id="new-issue-repo-group" hidden>
+                    <label for="new-issue-repo">Repo:</label>
+                    <select id="new-issue-repo"></select>
+                </div>
+                <div class="form-group">
+                    <label for="new-issue-title">Title:</label>
+                    <input type="text" id="new-issue-title">
+                </div>
+                <div class="form-group" id="new-issue-type-group" hidden>
+                    <label for="new-issue-type">Type:</label>
+                    <select id="new-issue-type"></select>
+                </div>
+                <div class="form-group" id="new-issue-epic-group" hidden>
+                    <label for="new-issue-epic">Epic:</label>
+                    <select id="new-issue-epic"></select>
+                </div>
+                <div class="form-group" id="new-issue-estimate-group" hidden>
+                    <label for="new-issue-estimate">Estimated Hours:</label>
+                    <input type="number" id="new-issue-estimate" min="0" step="0.25">
+                </div>
+                <button id="create-issue-button">CREATE ISSUE</button>
+                <p id="new-issue-status" class="note" hidden></p>
             </div>
             <p id="premium-note" class="note" hidden>Tracked sessions need Spotify Premium.</p>
 
@@ -103,6 +161,7 @@
             </div>
             <div id="session-done" hidden>
                 <p id="session-summary"></p>
+                <p id="session-github" class="note"></p>
                 <button id="new-session-button">New Session</button>
             </div>
         </div>

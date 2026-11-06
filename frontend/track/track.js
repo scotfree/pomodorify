@@ -9,6 +9,14 @@ import { createLocalLogger } from './loggers/local.js';
 import { createSession, formatClock, remainingMs } from './session.js';
 import { totalsToCsv, totalsToJson, describeTotals } from './export.js';
 import { partitionPlaylists, orderReplays } from './playlists.js';
+import { createGithubSettings } from './github/settings.js';
+import { createGithubApi } from './github/api.js';
+import { describeTarget } from './github/hours-target.js';
+import { createGithubLogger } from './loggers/github.js';
+import {
+    NO_PROJECT, NEW_ISSUE, DEFAULT_ISSUE_TYPE,
+    parseProjectChoice, projectValue, issueLabel, defaultRepoId,
+} from './github/picker.js';
 
 const REPLAY_ORDER_KEY = 'track_replay_order';
 
@@ -36,9 +44,20 @@ const api = createSpotifyApi(auth.getToken);
 const playback = createSpotifyPlayback({ getToken: auth.getToken, name: 'Pomodorify' });
 const logger = createLocalLogger();
 
+const CREATED_LABEL = { name: 'pomodorify created', color: 'e4572e', description: 'Created from Pomodorify' };
+const githubSettings = createGithubSettings();
+const githubApi = createGithubApi(githubSettings.getToken);
+const githubLogger = createGithubLogger({ api: githubApi, getFieldNames: githubSettings.getFieldNames });
+
+// GitHub lists, loaded once a token is set. issues: cache keyed by Project choice value.
+let github = { viewer: null, repos: [], projects: [], issues: new Map() };
+let createInfo = null;     // getRepoCreateInfo() for the new-issue form's repo
+let pageHiding = false;    // set on pagehide so the GitHub write uses keepalive
+
 let preview = null;        // { tracks, sourceName }
 let playerReady = false;
 let session = null;
+let sessionLabel = '';     // what the session logs to (title or issue label)
 let sessionTracks = [];
 let current = { index: -1, startedAtMs: 0 };  // track position, in session-clock time
 let playing = false;
@@ -235,18 +254,301 @@ async function save() {
     }
 }
 
+// --- GitHub: settings, Project/issue pickers, new issue ---
+
+function setNote(id, text) {
+    $(id).textContent = text || '';
+    $(id).hidden = !text;
+}
+
+function renderGithubSettings() {
+    $('github-fields').value = githubSettings.getFieldNames().join(', ');
+    $('github-token').value = '';
+    $('github-status').textContent = !githubSettings.getToken() ? 'No token set.'
+        : github.viewer ? `Connected as ${github.viewer.login}.` : 'Token set.';
+}
+
+async function loadGithub() {
+    github = { viewer: null, repos: [], projects: [], issues: new Map() };
+    renderProjectOptions();
+    if (!githubSettings.getToken()) {
+        setNote('github-note', 'Add a GitHub token (below the playlist builder) to log time to issues.');
+        renderGithubSettings();
+        return;
+    }
+    setNote('github-note', 'Loading GitHub projects and repos…');
+    try {
+        github.viewer = await githubApi.getViewer();
+        [github.projects, github.repos] = await Promise.all([githubApi.listProjects(), githubApi.listRepos()]);
+        setNote('github-note', '');
+    } catch (error) {
+        console.error(error);
+        setNote('github-note', `GitHub unavailable: ${error.message}`);
+    }
+    renderProjectOptions();
+    renderGithubSettings();
+    retryGithubPending();
+}
+
+async function retryGithubPending() {
+    if (githubLogger.pendingCount() === 0) return;
+    const done = await githubLogger.retryPending();
+    const left = githubLogger.pendingCount();
+    if (done > 0 || left > 0) {
+        setNote('github-note', `Sent ${done} earlier GitHub update(s)${left ? `; ${left} still waiting` : ''}.`);
+    }
+}
+
+function saveGithubSettings() {
+    const token = $('github-token').value.trim();
+    if (token) githubSettings.setToken(token);
+    githubSettings.setFieldNames($('github-fields').value);
+    loadGithub();
+}
+
+function removeGithubToken() {
+    githubSettings.clearToken();
+    loadGithub();
+}
+
+function renderProjectOptions() {
+    const select = $('project-select');
+    const previous = select.value;
+    $('project-options').replaceChildren(...github.projects.map(p => new Option(p.name, projectValue('project', p.id))));
+    $('repo-options').replaceChildren(...github.repos.map(r => new Option(r.name, projectValue('repo', r.id))));
+    select.value = [...select.options].some(o => o.value === previous) ? previous : NO_PROJECT;
+    onProjectChange();
+}
+
+function selectedIssues() {
+    return github.issues.get($('project-select').value) ?? [];
+}
+
+async function onProjectChange() {
+    const value = $('project-select').value;
+    const choice = parseProjectChoice(value);
+    const usesIssues = choice.kind !== 'none';
+    $('title-group').hidden = usesIssues;
+    $('issue-group').hidden = !usesIssues;
+    $('new-issue-form').hidden = true;
+    setNote('issue-note', '');
+    if (!usesIssues) return;
+
+    const select = $('issue-select');
+    if (!github.issues.has(value)) {
+        select.replaceChildren(new Option('Loading issues…', ''));
+        try {
+            const issues = choice.kind === 'project'
+                ? await githubApi.listProjectIssues(choice.id)
+                : await githubApi.listRepoIssues(choice.id);
+            github.issues.set(value, issues);
+        } catch (error) {
+            console.error(error);
+            select.replaceChildren(new Option('Error loading issues', ''));
+            return;
+        }
+        if ($('project-select').value !== value) return;  // changed while loading
+    }
+    renderIssueOptions();
+}
+
+function renderIssueOptions(selectedId = '') {
+    const issues = selectedIssues();
+    $('issue-select').replaceChildren(
+        new Option(issues.length ? '-- Choose an issue --' : '-- No open issues --', ''),
+        new Option('+ New issue', NEW_ISSUE),
+        ...issues.map(i => new Option(issueLabel(i), i.id)),
+    );
+    $('issue-select').value = selectedId;
+    onIssueChange();
+}
+
+function selectedIssue() {
+    const id = $('issue-select').value;
+    return selectedIssues().find(i => i.id === id) ?? null;
+}
+
+async function onIssueChange() {
+    const value = $('issue-select').value;
+    $('new-issue-form').hidden = value !== NEW_ISSUE;
+    setNote('issue-note', '');
+    if (value === NEW_ISSUE) {
+        showNewIssueForm();
+        return;
+    }
+    const issue = selectedIssue();
+    if (!issue) return;
+    setNote('issue-note', 'Checking hours fields…');
+    try {
+        const target = await githubLogger.prepare(issue.id);
+        if ($('issue-select').value === issue.id) setNote('issue-note', describeTarget(target));
+    } catch (error) {
+        console.error(error);
+        setNote('issue-note', `Couldn't read the issue: ${error.message}`);
+    }
+}
+
+function showNewIssueForm() {
+    const choice = parseProjectChoice($('project-select').value);
+    $('new-issue-title').value = '';
+    $('new-issue-estimate').value = '';
+    setNote('new-issue-status', '');
+    const repoSelect = $('new-issue-repo');
+    if (choice.kind === 'project') {
+        // Issues must live in a repo. Default to where most of this project's issues are.
+        const issues = selectedIssues();
+        const repos = [...github.repos];
+        for (const i of issues) {
+            if (!repos.some(r => r.id === i.repoId)) repos.push({ id: i.repoId, name: i.repo });
+        }
+        repoSelect.replaceChildren(...repos.map(r => new Option(r.name, r.id)));
+        repoSelect.value = defaultRepoId(issues, repos) ?? '';
+        $('new-issue-repo-group').hidden = false;
+        loadCreateInfo(repoSelect.value);
+    } else {
+        $('new-issue-repo-group').hidden = true;
+        loadCreateInfo(choice.id);
+    }
+    $('new-issue-title').focus();
+}
+
+// Fills type, epic and estimate for the chosen repo. Personal repos have none of them.
+async function loadCreateInfo(repoId) {
+    createInfo = null;
+    for (const group of ['new-issue-type-group', 'new-issue-epic-group', 'new-issue-estimate-group']) {
+        $(group).hidden = true;
+    }
+    if (!repoId) return;
+    try {
+        const info = await githubApi.getRepoCreateInfo(repoId, CREATED_LABEL.name);
+        const epics = info.org ? await githubApi.listOrgEpics(info.org) : [];
+        if (!$('new-issue-form').hidden && currentNewIssueRepo() !== repoId) return;  // repo changed meanwhile
+        createInfo = { ...info, epics };
+
+        if (info.issueTypes.length) {
+            $('new-issue-type').replaceChildren(...info.issueTypes.map(t => new Option(t.name, t.id)));
+            const task = info.issueTypes.find(t => t.name === DEFAULT_ISSUE_TYPE);
+            if (task) $('new-issue-type').value = task.id;
+            $('new-issue-type-group').hidden = false;
+        }
+        if (info.org) {
+            $('new-issue-epic').replaceChildren(new Option('-- No epic --', ''),
+                ...epics.map(e => new Option(issueLabel(e), e.id)));
+            $('new-issue-epic-group').hidden = false;
+        }
+        $('new-issue-estimate-group').hidden = !estimateField();
+    } catch (error) {
+        console.error(error);
+        setNote('new-issue-status', `Couldn't load repo details: ${error.message}`);
+    }
+}
+
+function currentNewIssueRepo() {
+    const choice = parseProjectChoice($('project-select').value);
+    return choice.kind === 'project' ? $('new-issue-repo').value : choice.id;
+}
+
+function estimateField() {
+    return createInfo?.numberFields.find(f => f.name.toLowerCase() === 'estimated hours') ?? null;
+}
+
+async function ensureCreatedLabel() {
+    if (createInfo.labelId) return createInfo.labelId;
+    createInfo.labelId = await githubApi.createLabel(
+        createInfo.repoId, CREATED_LABEL.name, CREATED_LABEL.color, CREATED_LABEL.description);
+    return createInfo.labelId;
+}
+
+async function createIssue() {
+    const title = $('new-issue-title').value.trim();
+    if (!title) {
+        alert('Please enter an issue title.');
+        return;
+    }
+    if (!createInfo) {
+        alert('Still loading the repo details. Try again in a moment.');
+        return;
+    }
+    const choice = parseProjectChoice($('project-select').value);
+    const button = $('create-issue-button');
+    button.disabled = true;
+    setNote('new-issue-status', 'Creating…');
+    try {
+        const estimate = parseFloat($('new-issue-estimate').value);
+        const field = estimateField();
+        const issue = await githubApi.createIssue({
+            repoId: createInfo.repoId,
+            title,
+            issueTypeId: $('new-issue-type-group').hidden ? null : $('new-issue-type').value,
+            parentIssueId: $('new-issue-epic-group').hidden ? null : $('new-issue-epic').value,
+            projectId: choice.kind === 'project' ? choice.id : null,
+            labelIds: [await ensureCreatedLabel()],
+            assigneeIds: github.viewer ? [github.viewer.id] : [],
+            issueFields: field && estimate > 0 ? [{ fieldId: field.id, numberValue: estimate }] : [],
+        });
+        const key = $('project-select').value;
+        github.issues.set(key, [issue, ...(github.issues.get(key) ?? [])]);
+        renderIssueOptions(issue.id);
+    } catch (error) {
+        console.error(error);
+        setNote('new-issue-status', `Couldn't create the issue: ${error.message}`);
+    } finally {
+        button.disabled = false;
+    }
+}
+
+// What the session logs to: { label, issue } where issue is null for No Project.
+// Returns null if an issue is required but not chosen yet.
+function chooseLogTarget() {
+    if (parseProjectChoice($('project-select').value).kind === 'none') {
+        return { label: $('project-input').value.trim(), issue: null };
+    }
+    const issue = selectedIssue();
+    return issue ? { label: issueLabel(issue), issue } : null;
+}
+
+// Local totals always get the hours. An issue also gets them on GitHub.
+function sessionLogger(issue) {
+    return {
+        addHours(name, hours) {
+            logger.addHours(name, hours);
+            if (issue) logToGithub(issue, hours);
+        },
+    };
+}
+
+async function logToGithub(issue, hours) {
+    const show = (text) => { $('session-github').textContent = text; };
+    show('Updating GitHub…');
+    try {
+        const result = await githubLogger.log(issue.id, hours, { fresh: !pageHiding });
+        if (result.kind === 'comment') show('Posted an hours-worked comment on the issue.');
+        else if (result.kind === 'queued') show('GitHub update queued for next time.');
+        else show(`${result.fieldName} is now ${result.value} h.`);
+    } catch (error) {
+        console.error(error);
+        show(`GitHub update failed (${error.message}). It will be retried next time.`);
+    }
+}
+
 // --- tracked session ---
 
 // Runs inside the click handler with nothing awaited before playback.play(),
 // so the browser counts the audio as user-initiated.
 function startSession() {
-    const project = $('project-input').value.trim();
-    session = createSession({ project, logger });
+    const target = chooseLogTarget();
+    if (!target) {
+        alert('Choose an issue (or create one) first, or pick No Project.');
+        return;
+    }
+    session = createSession({ project: target.label, logger: sessionLogger(target.issue) });
+    sessionLabel = target.label;
     sessionTracks = preview.tracks;
     current = { index: -1, startedAtMs: 0 };
     playing = false;
 
-    $('session-project').textContent = project || 'No project (not logging)';
+    $('session-project').textContent = target.label || 'No project (not logging)';
+    $('session-github').textContent = '';
     $('session-track-name').textContent = 'Starting…';
     $('session-track-artist').textContent = '';
     $('session-controls').hidden = false;
@@ -260,6 +562,8 @@ function startSession() {
         alert('Failed to start playback. Please try again.');
         endSession();
     });
+    // After play(), so nothing is awaited before it. Readies a one-write log for pagehide.
+    if (target.issue) githubLogger.prepare(target.issue.id).catch(console.error);
 }
 
 function onPlaybackChange(change) {
@@ -296,7 +600,7 @@ function renderSession() {
 function endSession() {
     if (!session || session.isFinished()) return;
     renderSession();
-    const project = $('project-input').value.trim();
+    const project = sessionLabel;
     const hours = session.finish();
     clearInterval(ticker);
     ticker = null;
@@ -367,8 +671,15 @@ function wireEvents() {
     playback.onStateChange(onPlaybackChange);
     // Closing the tab mid-session still logs the time played so far.
     window.addEventListener('pagehide', () => {
+        pageHiding = true;
         if (session && !session.isFinished()) session.finish();
     });
+    $('project-select').addEventListener('change', onProjectChange);
+    $('issue-select').addEventListener('change', onIssueChange);
+    $('new-issue-repo').addEventListener('change', () => loadCreateInfo($('new-issue-repo').value));
+    $('create-issue-button').addEventListener('click', createIssue);
+    $('github-save-button').addEventListener('click', saveGithubSettings);
+    $('github-clear-button').addEventListener('click', removeGithubToken);
 }
 
 async function boot() {
@@ -395,6 +706,7 @@ async function boot() {
     renderTotals();
     loadPlaylists();
     setUpPlayer();
+    loadGithub();
 }
 
 boot();

@@ -67,6 +67,7 @@ npm run deploy   # cdk deploy --profile personal
 - `session.js`: the session clock (only counts while playing; repeat calls are harmless) and `createSession().finish()`, which logs once whether it's called by Stop, playlist end or `pagehide`. Also the time-left and clock display helpers.
 - `playback/spotify.js`: the Web Playback SDK adapter. `playback/spotify-state.js`: pure state interpretation and end detection.
 - `loggers/local.js`: `pomodorify_hours` totals. `export.js`: CSV/JSON formatting.
+- `github/`: `api.js` (GraphQL), `hours-target.js` (which field gets the hours), `settings.js` (token, field names), `picker.js`. `loggers/github.js`: read-add-write with a pending retry queue.
 
 ### Root app
 
@@ -89,7 +90,7 @@ Everything lives in a single `PomodorifyApp` class (`frontend/app.js`). The UI h
 
 - **Spotify February 2026 API migration (#7)** — now covers both apps. The track app copied the same deprecated endpoints and the `product`-based Premium check.
 - **Background image management** — currently requires editing the hardcoded arrays in `app.js` *and* `track/track.js` (#12) and manually deploying assets, which is painful. Explore a better approach.
-- **Track app follow-ons** — see "Options left open" in `DESIGN_V2.md` (GitHub issue logger, cross-device log, YouTube).
+- **Track app follow-ons** — see "Options left open" in `DESIGN_V2.md` (cross-device log, YouTube).
 
 ## Key Decisions
 
@@ -115,4 +116,8 @@ Everything lives in a single `PomodorifyApp` class (`frontend/app.js`). The UI h
 - Discover Weekly is dropped from the track app. It's Spotify-specific and unused (and unreadable after the Feb 2026 API changes)
 - Replay list order: random the first time, then stable (`track_replay_order`). New saved sessions are inserted at random positions. That's Scot's choice
 - `track.css` has `[hidden] { display: none !important; }` because `style.css` sets `display` on classes like `.button-group`, which otherwise override the `hidden` attribute
+- GitHub hours go to the first match in an ordered field-name list (org issue field, then Projects v2 number field), else a comment. Default `Worked Hours`, `Time Actual[hours]`. `Worked Hours` is the Salmon-Creek-Systems org issue field from the internal repo's TA project system; Time Actual is an older project #4 field. Scot chose the fallback chain
+- GitHub has no atomic increment. Don't drop the pending queue's "already written?" check on retry: it's what stops a lost response from double-adding hours
+- Issues created from the track app get the `pomodorify created` label and are assigned to the viewer
+- GitHub auth is a pasted classic PAT, because fine-grained tokens reportedly can't access user-owned Projects v2 (not verified)
 - Logging always records actual time played. There's no "undo / don't log" in v1; Clear plus the JSON export cover mistakes

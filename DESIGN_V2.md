@@ -70,6 +70,29 @@ The session core only talks to these two interfaces.
 
 The scope is Spotify only, a single user, no backend, and nothing new in AWS.
 
+**Status (2026-11-06):** steps 1–3 are built (PR A). Steps 4–5 are next (PR B).
+
+### Where it lives: a separate app at `/track`
+
+v1 is a standalone page that leaves the current app and its deployment unchanged. If it
+works out, it may replace the root app later.
+
+- Everything is under `frontend/track/`. The deploy already syncs `frontend/` recursively,
+  so no workflow or CDK change is needed beyond running `tests/track.test.mjs` in CI.
+- The URL is `/track/index.html`, not `/track/`. CloudFront's `defaultRootObject` only
+  covers `/`, and serving `/track/` would need a CloudFront Function.
+- Redirect URIs `http://127.0.0.1:8080/track/index.html` and
+  `https://pomodorifi.es/track/index.html` are registered in the Spotify Dashboard.
+- Both apps share an origin, so the track app prefixes its auth keys with `track_` and
+  never touches the root app's session. You log in to each app separately.
+- The track app copies what it needs from `app.js` and only *reads* shared files
+  (`utils.js`, `style.css`, `assets/`). It never edits them.
+- Discover Weekly is dropped. It's Spotify-specific and unused.
+
+Layout: `track.js` (UI), `auth.js`, `spotify-api.js`, `session.js` (clock, session,
+display helpers), `playback/spotify.js` (adapter), `playback/spotify-state.js` (pure state
+interpretation and end detection), `loggers/local.js`.
+
 ### 1. Spotify playback in the tab (Web Playback SDK)
 
 - Load `https://sdk.scdn.co/spotify-player.js`. Create a `Spotify.Player` whose
@@ -77,24 +100,37 @@ The scope is Spotify only, a single user, no backend, and nothing new in AWS.
 - On `ready`, keep the `device_id`. Start playback with a single
   `PUT /me/player/play?device_id=…` containing **all** track URIs in `uris`. This
   replaces the current clear-queue / play-first / queue-the-rest-with-100ms-delays logic.
-- Add the `streaming` scope. Existing tokens need a re-login, so detect the missing scope
-  and send the user to login.
+- Add the `streaming` scope. Store the scope string from the token response, and treat a
+  token missing any required scope as logged out, which sends the user to login.
 - Call `player.activateElement()` inside the Start click handler. Browsers block audio
   that isn't started by a user gesture.
-- Use `player_state_changed` to drive `onStateChange`. Treat the session as ended when the
-  last track has finished: the state is paused, the position is 0, and the last track
-  appears in `previous_tracks`. Treat a null state (device lost) as stopped.
+- Use `player_state_changed` to drive `onStateChange`. Treat a null state (device lost) as
+  stopped.
+- **End detection (revised after the spike).** At the end of the playlist the SDK wraps
+  back to track 1 and pauses. One transitional state briefly shows the last track in
+  `previous_tracks`, then the queue resets and looks the same as "paused before starting".
+  So the rule is stateful: the session has ended if the last track was reached and a paused
+  state then shows an earlier track. Pausing on the last track isn't an end. The adapter
+  pauses the player on end so it stays silent.
+- The SDK sends each change as a burst of 2–5 identical states. The adapter only emits real
+  changes in playing, paused or track index.
+- Match the current track via `linked_from.uri` when it's present (track relinking).
 - Premium is required, which is the same gate as today's PLAY button.
 
-New file: `frontend/playback/spotify.js`.
+Files: `frontend/track/playback/spotify.js`, `frontend/track/playback/spotify-state.js`.
 
 ### 2. Session screen
 
-- Add a fifth section, `session-section`, managed by a new `showSessionSection()`.
+- The track page has `login`, `playlist`, `preview`, `session` and `result` sections,
+  switched by `showSection(id)`.
 - The preview screen gets an optional **Project** text input that uses a `<datalist>` of
   previously used project names, plus a **Start session** button. Start session replaces
   the current PLAY button. SAVE (export mode) stays.
-- The session screen shows the current track, elapsed time, Pause/Resume, and Stop.
+- The session screen shows the current track, elapsed time, Pause/Resume, Stop, and
+  "Track N of M · X min left". Time left is the rest of the current track (session-clock
+  time since the track started) plus the later tracks' durations.
+- Start session runs `playback.play()` with nothing awaited first, so the click still counts
+  as the user gesture.
 - Elapsed time is counted by the app clock and only accumulates while the adapter reports
   `playing`. It's actual time, not the playlist's planned length.
 - When the session ends (playlist finishes or Stop is pressed), the elapsed hours are
@@ -110,7 +146,8 @@ New file: `frontend/playback/spotify.js`.
 - The storage object is injected (default `localStorage`) so Node tests can pass in a
   plain-object fake. This follows the same pattern as the injectable shuffle.
 
-New file: `frontend/loggers/local.js`.
+File: `frontend/track/loggers/local.js`. The key isn't `track_`-prefixed, because the root app
+doesn't use it and keeping it unprefixed survives a later replacement.
 
 ### 4. Totals view and export
 
@@ -131,12 +168,14 @@ New file: `frontend/loggers/local.js`.
 
 ### 6. Tests
 
-- Add the following to `tests/test.mjs`:
-  - local logger adds to totals across calls;
-  - new projects appear in `getTotals()`;
-  - `clear()` empties everything;
-  - CSV formatting (put it in `utils.js`, with a project name containing a comma).
-- Playback isn't unit-tested. Test it manually in the browser.
+- Track-app tests live in `tests/track.test.mjs`, so `tests/test.mjs` stays the root
+  app's. CI runs both.
+- Covered: the local logger, the session clock and `finish()`-once, time left and clock
+  formatting, auth (scope check, `track_` key isolation, refresh), end detection (fixtures
+  replayed from the Safari spike logs), and the adapter wired to a fake `Spotify.Player`.
+- Still to add with PR B: CSV formatting (in `track/`, not `utils.js`, with a project name
+  containing a comma).
+- DOM wiring and the real SDK are tested by hand in the browser.
 
 ### Out of v1
 

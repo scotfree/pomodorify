@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { createLocalLogger } from '../frontend/track/loggers/local.js';
 import { createSessionClock, createSession } from '../frontend/track/session.js';
 import { currentTrackUri, initialTracker, nextTrackerState } from '../frontend/track/playback/spotify-state.js';
+import { createSpotifyPlayback } from '../frontend/track/playback/spotify.js';
 
 let passed = 0;
 let failed = 0;
@@ -320,6 +321,119 @@ test('unknown track keeps the last known index', () => {
     foreign.track_window.current_track = { name: 'Other', uri: 'spotify:track:OTHER' };
     const changes = replay([state(false, 0, 'Big Mon'), foreign]);
     assert.deepEqual(changes, [{ playing: true, trackIndex: 1, ended: false }]);
+});
+
+// --- Spotify playback adapter (SDK faked) ---
+console.log('\nspotify playback adapter');
+
+async function testAsync(name, fn) {
+    try {
+        await fn();
+        console.log(`  ✓ ${name}`);
+        passed++;
+    } catch (err) {
+        console.error(`  ✗ ${name}`);
+        console.error(`    ${err.message}`);
+        failed++;
+    }
+}
+
+// Stands in for Spotify.Player; `calls` records the order of interactions.
+function fakeSdk({ failWith = null } = {}) {
+    const calls = [];
+    let instance = null;
+    class Player {
+        constructor(opts) {
+            this.opts = opts;
+            this.handlers = {};
+            instance = this;
+        }
+        addListener(event, cb) { (this.handlers[event] ||= []).push(cb); }
+        fire(event, arg) { (this.handlers[event] || []).forEach(cb => cb(arg)); }
+        async connect() {
+            calls.push('connect');
+            setTimeout(() => failWith
+                ? this.fire(failWith, { message: 'nope' })
+                : this.fire('ready', { device_id: 'dev1' }), 0);
+            return true;
+        }
+        activateElement() { calls.push('activate'); return Promise.resolve(); }
+        pause() { calls.push('pause'); return Promise.resolve(); }
+        resume() { calls.push('resume'); return Promise.resolve(); }
+    }
+    const fetchFn = async (url, opts) => {
+        calls.push({ url, method: opts.method, body: JSON.parse(opts.body), auth: opts.headers.Authorization });
+        return { ok: true, status: 204 };
+    };
+    return { loadSdk: async () => ({ Player }), fetchFn, calls, player: () => instance };
+}
+
+async function readyAdapter(sdk = fakeSdk()) {
+    const playback = createSpotifyPlayback({ getToken: async () => 'tok', loadSdk: sdk.loadSdk, fetchFn: sdk.fetchFn });
+    await playback.init();
+    return { playback, sdk };
+}
+
+const TRACKS = Object.entries(URIS).map(([name, uri]) => ({ uri, name }));
+
+await testAsync('play activates the element before the API call, then sends all URIs to our device', async () => {
+    const { playback, sdk } = await readyAdapter();
+    await playback.play(TRACKS);
+    const activateAt = sdk.calls.indexOf('activate');
+    const request = sdk.calls.find(c => c.url);
+    assert.ok(activateAt >= 0 && activateAt < sdk.calls.indexOf(request));
+    assert.equal(request.url, 'https://api.spotify.com/v1/me/player/play?device_id=dev1');
+    assert.equal(request.method, 'PUT');
+    assert.equal(request.auth, 'Bearer tok');
+    assert.deepEqual(request.body, { uris: PLAYLIST });
+});
+
+await testAsync('getOAuthToken hands the SDK our token', async () => {
+    const { sdk } = await readyAdapter();
+    const token = await new Promise(resolve => sdk.player().opts.getOAuthToken(resolve));
+    assert.equal(token, 'tok');
+});
+
+await testAsync('init rejects on account_error (not Premium)', async () => {
+    const sdk = fakeSdk({ failWith: 'account_error' });
+    await assert.rejects(readyAdapter(sdk), /account_error/);
+});
+
+await testAsync('state changes are forwarded once, and the end pauses the player', async () => {
+    const { playback, sdk } = await readyAdapter();
+    const changes = [];
+    playback.onStateChange(c => changes.push(c));
+    await playback.play(TRACKS);
+    const fire = (s) => sdk.player().fire('player_state_changed', s);
+    fire(state(false, 0, 'Black Mountain Rag', ['Big Mon'], []));
+    fire(state(false, 0, 'Black Mountain Rag', ['Big Mon'], []));
+    fire(state(true, 0, 'Wild Ride', ['Black Mountain Rag'], []));
+    fire(state(true, 0, 'Wild Ride', [], ['Big Mon']));
+    assert.deepEqual(changes, [
+        { playing: true, trackIndex: 2, ended: false },
+        { playing: false, trackIndex: 2, ended: true },
+    ]);
+    assert.equal(sdk.calls.at(-1), 'pause');
+});
+
+await testAsync('states before play() are ignored', async () => {
+    const { playback, sdk } = await readyAdapter();
+    const changes = [];
+    playback.onStateChange(c => changes.push(c));
+    sdk.player().fire('player_state_changed', state(false, 0, 'Wild Ride'));
+    assert.deepEqual(changes, []);
+});
+
+await testAsync('stop pauses and ignores later states', async () => {
+    const { playback, sdk } = await readyAdapter();
+    const changes = [];
+    playback.onStateChange(c => changes.push(c));
+    await playback.play(TRACKS);
+    sdk.player().fire('player_state_changed', state(false, 0, 'Wild Ride'));
+    await playback.stop();
+    sdk.player().fire('player_state_changed', state(false, 5000, 'Big Mon'));
+    assert.equal(changes.length, 1);
+    assert.equal(sdk.calls.at(-1), 'pause');
 });
 
 // --- Summary ---

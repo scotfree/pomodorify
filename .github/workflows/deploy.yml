@@ -25,6 +25,7 @@ jobs:
         run: |
           node tests/test.mjs
           node tests/track.test.mjs
+          node tests/spotless.test.mjs
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4

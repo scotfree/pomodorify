@@ -231,6 +231,10 @@ app-owned playlists, and metadata filters.
   plus ordered track references, stored in `localStorage` at first and server-side later.
 
 ### YouTube platform
+
+**Status (2026-11-06):** prototype built as a separate app, `/spotless/index.html`
+(`frontend/spotless/`). Search only, playlists in `localStorage`, an API key instead of
+sign-in. See CLAUDE.md.
 - **Playback:** YouTube IFrame Player API. It's easy to wrap in the adapter interface and
   fires an ended event. The constraints are:
   - playback is video, not audio-only;

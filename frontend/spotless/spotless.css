@@ -1,0 +1,141 @@
+/* Spotless additions on top of ../style.css. Mirrors ../track/track.css (copied,
+   not linked, so track app style changes don't reach here by accident). */
+
+/* style.css sets `display` on some classes (e.g. .button-group: flex), which
+   would otherwise override the `hidden` attribute. */
+[hidden] {
+    display: none !important;
+}
+
+.badge {
+    font-size: 0.9rem;
+    font-weight: 600;
+    vertical-align: middle;
+    padding: 0.15rem 0.5rem;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.2);
+}
+
+#start-button {
+    background: #1db954;
+}
+
+#start-button:hover:not(:disabled) {
+    background: #1ed760;
+}
+
+.note {
+    font-size: 0.9rem;
+    opacity: 0.8;
+}
+
+.name-row {
+    display: flex;
+    gap: 0.5rem;
+    align-items: stretch;
+}
+
+.name-row input {
+    flex: 1;
+    min-width: 0;
+}
+
+.name-row button {
+    width: auto;
+    margin: 0;
+}
+
+.session-clock {
+    font-size: 4rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    margin: 1rem 0;
+}
+
+.session-now {
+    margin-bottom: 0.5rem;
+}
+
+.session-progress {
+    opacity: 0.8;
+    font-variant-numeric: tabular-nums;
+}
+
+/* YouTube requires a visible player of at least 200x200 px while it plays. */
+#player-wrap {
+    display: flex;
+    justify-content: center;
+    margin-top: 1rem;
+}
+
+#player-wrap iframe {
+    max-width: 100%;
+    border-radius: 8px;
+}
+
+#player-wrap.parked {
+    position: fixed;
+    left: -10000px;
+    top: 0;
+}
+
+.replay {
+    margin-top: 1.5rem;
+}
+
+.totals {
+    margin-top: 1.5rem;
+}
+
+.github-settings {
+    margin-top: 1.5rem;
+    text-align: left;
+}
+
+.github-settings summary {
+    cursor: pointer;
+    opacity: 0.8;
+    margin-bottom: 0.75rem;
+}
+
+.new-issue {
+    text-align: left;
+    padding: 0.75rem;
+    margin-bottom: 1rem;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 8px;
+}
+
+.totals table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 0.75rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.totals th,
+.totals td {
+    text-align: left;
+    padding: 0.35rem 0.5rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.totals th:last-child,
+.totals td:last-child {
+    text-align: right;
+}
+
+@media (max-width: 768px) {
+    .session-clock {
+        font-size: 3rem;
+    }
+}
+
+.track-name a {
+    color: inherit;
+    text-decoration: none;
+}
+
+.track-name a:hover {
+    text-decoration: underline;
+}

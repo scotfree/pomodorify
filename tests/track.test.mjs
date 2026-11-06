@@ -6,6 +6,11 @@ import { currentTrackUri, initialTracker, nextTrackerState } from '../frontend/t
 import { createSpotifyPlayback } from '../frontend/track/playback/spotify.js';
 import { totalsToCsv, totalsToJson, describeTotals } from '../frontend/track/export.js';
 import { partitionPlaylists, orderReplays } from '../frontend/track/playlists.js';
+import { createGithubSettings, parseFieldNames, DEFAULT_HOURS_FIELDS, GITHUB_KEYS } from '../frontend/track/github/settings.js';
+import { resolveHoursTarget, roundHours, describeTarget } from '../frontend/track/github/hours-target.js';
+import { createGithubLogger, commentBody } from '../frontend/track/loggers/github.js';
+import { createGithubApi } from '../frontend/track/github/api.js';
+import { parseProjectChoice, issueLabel, defaultRepoId } from '../frontend/track/github/picker.js';
 
 let passed = 0;
 let failed = 0;
@@ -657,6 +662,333 @@ test('orderReplays with the default random is a permutation', () => {
     const saved = ['a', 'b', 'c', 'd', 'e'].map(id => pl(id));
     const { order } = orderReplays(saved);
     assert.deepEqual([...order].sort(), ['a', 'b', 'c', 'd', 'e']);
+});
+
+// --- GitHub settings ---
+console.log('\ngithub settings');
+
+test('field names default to Worked Hours then Time Actual[hours]', () => {
+    const settings = createGithubSettings(fakeStorage());
+    assert.deepEqual(settings.getFieldNames(), ['Worked Hours', 'Time Actual[hours]']);
+});
+
+test('parseFieldNames trims, drops blanks, and falls back to defaults when empty', () => {
+    assert.deepEqual(parseFieldNames(' a , b,, c '), ['a', 'b', 'c']);
+    assert.deepEqual(parseFieldNames(' , '), DEFAULT_HOURS_FIELDS);
+});
+
+test('settings persist the token and field names under track_ keys', () => {
+    const storage = fakeStorage();
+    const settings = createGithubSettings(storage);
+    settings.setToken('  ghp_x  ');
+    settings.setFieldNames('Hours, Other');
+    assert.equal(storage.data[GITHUB_KEYS.token], 'ghp_x');
+    assert.deepEqual(createGithubSettings(storage).getFieldNames(), ['Hours', 'Other']);
+    assert.ok(Object.keys(storage.data).every(k => k.startsWith('track_')));
+    settings.clearToken();
+    assert.equal(settings.getToken(), '');
+});
+
+// --- hours target resolution ---
+console.log('\ngithub hours target');
+
+// Shaped like ISSUE_HOURS_QUERY results (taken from a real Salmon-Creek-Systems issue).
+// Empty {} nodes are what GitHub returns for field types the fragments don't match.
+function issueNode({ orgFields = true, issueValues = [], projectItems = [] } = {}) {
+    return {
+        id: 'I_1',
+        number: 132,
+        title: 'Parcel data',
+        repository: {
+            id: 'R_1',
+            nameWithOwner: 'Salmon-Creek-Systems/internal',
+            owner: orgFields
+                ? { __typename: 'Organization', login: 'Salmon-Creek-Systems', issueFields: { nodes: [
+                    {}, { id: 'IFN_scoped', name: 'Scoped Hours' }, { id: 'IFN_worked', name: 'Worked Hours' }, {},
+                ] } }
+                : { __typename: 'User', login: 'scotfree' },
+        },
+        issueFieldValues: { nodes: issueValues },
+        projectItems: { nodes: projectItems },
+    };
+}
+
+const atlasItem = (number) => ({
+    id: 'PVTI_1',
+    project: { id: 'PVT_4', title: 'Stewardship Atlas', fields: { nodes: [
+        { id: 'PVTF_title', name: 'Title', dataType: 'TITLE' },
+        { id: 'PVTF_est', name: 'Time Est', dataType: 'NUMBER' },
+        { id: 'PVTF_actual', name: 'Time Actual[hours]', dataType: 'NUMBER' },
+    ] } },
+    fieldValues: { nodes: number == null ? [{}] : [{}, { number, field: { id: 'PVTF_actual', name: 'Time Actual[hours]' } }] },
+});
+
+test('org issue field wins, with an unset value counting as 0', () => {
+    const target = resolveHoursTarget(issueNode({ projectItems: [atlasItem(4)] }), DEFAULT_HOURS_FIELDS);
+    assert.deepEqual(target, {
+        kind: 'issueField', issueId: 'I_1', fieldId: 'IFN_worked', fieldName: 'Worked Hours', current: 0,
+    });
+});
+
+test('org issue field reads its current value', () => {
+    const issue = issueNode({ issueValues: [{ value: 2.5, field: { id: 'IFN_worked', name: 'Worked Hours' } }, {}] });
+    assert.equal(resolveHoursTarget(issue, DEFAULT_HOURS_FIELDS).current, 2.5);
+});
+
+test('falls back to a project number field when the org has no matching issue field', () => {
+    const target = resolveHoursTarget(issueNode({ orgFields: false, projectItems: [atlasItem(4)] }), DEFAULT_HOURS_FIELDS);
+    assert.equal(target.kind, 'projectField');
+    assert.equal(target.projectId, 'PVT_4');
+    assert.equal(target.itemId, 'PVTI_1');
+    assert.equal(target.fieldId, 'PVTF_actual');
+    assert.equal(target.current, 4);
+});
+
+test('an unset project field counts as 0', () => {
+    const target = resolveHoursTarget(issueNode({ orgFields: false, projectItems: [atlasItem(null)] }), DEFAULT_HOURS_FIELDS);
+    assert.equal(target.current, 0);
+});
+
+test('names are tried in order: an earlier project field beats a later issue field', () => {
+    const target = resolveHoursTarget(issueNode({ projectItems: [atlasItem(1)] }), ['Time Actual[hours]', 'Worked Hours']);
+    assert.equal(target.kind, 'projectField');
+});
+
+test('name matching ignores case and surrounding spaces', () => {
+    assert.equal(resolveHoursTarget(issueNode(), [' worked hours ']).fieldId, 'IFN_worked');
+});
+
+test('non-number project fields with a matching name are ignored', () => {
+    assert.equal(resolveHoursTarget(issueNode({ orgFields: false, projectItems: [atlasItem(1)] }), ['Title']).kind, 'comment');
+});
+
+test('no matching field means a comment', () => {
+    const target = resolveHoursTarget(issueNode({ orgFields: false }), DEFAULT_HOURS_FIELDS);
+    assert.deepEqual(target, { kind: 'comment', issueId: 'I_1' });
+});
+
+test('roundHours and describeTarget', () => {
+    assert.equal(roundHours(0.1 + 0.2), 0.3);
+    assert.equal(describeTarget({ kind: 'comment' }), 'No hours field found: logs a comment.');
+    assert.equal(describeTarget({ kind: 'issueField', fieldName: 'Worked Hours', current: 1.234 }),
+        'Adds to Worked Hours, now 1.23 h.');
+});
+
+// --- GitHub logger ---
+console.log('\ngithub logger');
+
+// A fake api over one issue: tracks writes and lets a call fail on demand.
+function fakeGithubApi(node) {
+    const calls = [];
+    const comments = [];
+    const api = {
+        calls,
+        comments,
+        failNext: null,  // method name whose next call throws
+        node,
+        async getIssueHoursInfo(id) { calls.push(['read', id]); return api.node; },
+        async setIssueFieldNumber(issueId, fieldId, value, opts) {
+            calls.push(['issueField', fieldId, value, Boolean(opts?.keepalive)]);
+            if (api.failNext === 'setIssueFieldNumber') { api.failNext = null; throw new Error('network'); }
+            api.node = { ...api.node, issueFieldValues: { nodes: [{ value, field: { id: fieldId } }] } };
+        },
+        async setProjectFieldNumber(projectId, itemId, fieldId, value, opts) {
+            calls.push(['projectField', fieldId, value, Boolean(opts?.keepalive)]);
+        },
+        async addComment(issueId, body, opts) {
+            calls.push(['comment', Boolean(opts?.keepalive)]);
+            if (api.failNext === 'addComment') { api.failNext = null; throw new Error('network'); }
+            comments.push(body);
+        },
+        async hasComment(issueId, text) { return comments.some(c => c.includes(text)); },
+    };
+    return api;
+}
+
+function githubLoggerWith(api, storage = fakeStorage()) {
+    let n = 0;
+    return createGithubLogger({
+        api, storage, getFieldNames: () => DEFAULT_HOURS_FIELDS,
+        now: () => Date.UTC(2026, 10, 6, 12), newId: () => `s${++n}`,
+    });
+}
+
+const workedValue = (value) => ({ issueValues: [{ value, field: { id: 'IFN_worked', name: 'Worked Hours' } }] });
+
+await testAsync('log adds to the issue field, re-reading first (fresh)', async () => {
+    const api = fakeGithubApi(issueNode(workedValue(1.5)));
+    const result = await githubLoggerWith(api).log('I_1', 0.4166);
+    assert.deepEqual(result, { kind: 'issueField', fieldName: 'Worked Hours', value: 1.92 });
+    assert.deepEqual(api.calls, [['read', 'I_1'], ['issueField', 'IFN_worked', 1.92, false]]);
+});
+
+await testAsync('log adds to a project field', async () => {
+    const api = fakeGithubApi(issueNode({ orgFields: false, projectItems: [atlasItem(4)] }));
+    const result = await githubLoggerWith(api).log('I_1', 1);
+    assert.equal(result.value, 5);
+    assert.deepEqual(api.calls.at(-1), ['projectField', 'PVTF_actual', 5, false]);
+});
+
+await testAsync('log posts a comment with a session marker when there is no field', async () => {
+    const api = fakeGithubApi(issueNode({ orgFields: false }));
+    const result = await githubLoggerWith(api).log('I_1', 0.5);
+    assert.equal(result.kind, 'comment');
+    assert.equal(api.comments[0], commentBody(0.5, '2026-11-06', 's1'));
+    assert.match(api.comments[0], /0\.50 hours worked/);
+    assert.match(api.comments[0], /<!-- pomodorify-session:s1 -->/);
+});
+
+await testAsync('pagehide log uses the prepared target: one keepalive write, no read', async () => {
+    const api = fakeGithubApi(issueNode(workedValue(1)));
+    const logger = githubLoggerWith(api);
+    await logger.prepare('I_1');
+    api.calls.length = 0;
+    await logger.log('I_1', 0.5, { fresh: false });
+    assert.deepEqual(api.calls, [['issueField', 'IFN_worked', 1.5, true]]);
+});
+
+await testAsync('pagehide log with nothing prepared is queued, not sent', async () => {
+    const api = fakeGithubApi(issueNode());
+    const logger = githubLoggerWith(api);
+    assert.deepEqual(await logger.log('I_1', 0.5, { fresh: false }), { kind: 'queued' });
+    assert.equal(api.calls.length, 0);
+    assert.equal(logger.pendingCount(), 1);
+    await logger.retryPending();
+    assert.deepEqual(api.calls.at(-1), ['issueField', 'IFN_worked', 0.5, false]);
+    assert.equal(logger.pendingCount(), 0);
+});
+
+await testAsync('a failed write stays queued and is sent by retryPending', async () => {
+    const storage = fakeStorage();
+    const api = fakeGithubApi(issueNode(workedValue(2)));
+    api.failNext = 'setIssueFieldNumber';
+    await assert.rejects(githubLoggerWith(api, storage).log('I_1', 1), /network/);
+    const later = githubLoggerWith(api, storage);  // next page load
+    assert.equal(later.pendingCount(), 1);
+    assert.equal(await later.retryPending(), 1);
+    assert.deepEqual(api.calls.at(-1), ['issueField', 'IFN_worked', 3, false]);
+    assert.equal(later.pendingCount(), 0);
+});
+
+await testAsync('retry does not add twice when the earlier field write actually landed', async () => {
+    const storage = fakeStorage();
+    const api = fakeGithubApi(issueNode(workedValue(2)));
+    const logger = githubLoggerWith(api, storage);
+    // Simulate a write that reached GitHub but whose response was lost (tab closed).
+    const realSet = api.setIssueFieldNumber;
+    api.setIssueFieldNumber = async (...args) => { await realSet(...args); throw new Error('response lost'); };
+    await assert.rejects(logger.log('I_1', 1), /response lost/);
+    api.setIssueFieldNumber = realSet;
+    api.calls.length = 0;
+    assert.equal(await githubLoggerWith(api, storage).retryPending(), 1);
+    assert.ok(!api.calls.some(c => c[0] === 'issueField'), 'no second write');
+});
+
+await testAsync('retry does not post a comment twice', async () => {
+    const storage = fakeStorage();
+    const api = fakeGithubApi(issueNode({ orgFields: false }));
+    const realAdd = api.addComment;
+    api.addComment = async (...args) => { await realAdd(...args); throw new Error('response lost'); };
+    await assert.rejects(githubLoggerWith(api, storage).log('I_1', 1), /response lost/);
+    api.addComment = realAdd;
+    await githubLoggerWith(api, storage).retryPending();
+    assert.equal(api.comments.length, 1);
+});
+
+await testAsync('a failed comment is posted on retry', async () => {
+    const storage = fakeStorage();
+    const api = fakeGithubApi(issueNode({ orgFields: false }));
+    api.failNext = 'addComment';
+    await assert.rejects(githubLoggerWith(api, storage).log('I_1', 1), /network/);
+    await githubLoggerWith(api, storage).retryPending();
+    assert.equal(api.comments.length, 1);
+});
+
+// --- GitHub api ---
+console.log('\ngithub api');
+
+function fakeGraphqlFetch(replies) {
+    const requests = [];
+    const fetchFn = async (url, init) => {
+        requests.push({ url, init, body: JSON.parse(init.body) });
+        const reply = replies.shift();
+        return { ok: reply.status ? reply.status < 400 : true, status: reply.status ?? 200, json: async () => reply.json };
+    };
+    fetchFn.requests = requests;
+    return fetchFn;
+}
+
+await testAsync('graphql sends the bearer token and throws on GraphQL errors', async () => {
+    const fetchFn = fakeGraphqlFetch([{ json: { errors: [{ message: 'Bad credentials' }] } }]);
+    const api = createGithubApi(() => 'ghp_t', fetchFn);
+    await assert.rejects(api.getViewer(), /Bad credentials/);
+    assert.equal(fetchFn.requests[0].url, 'https://api.github.com/graphql');
+    assert.equal(fetchFn.requests[0].init.headers.Authorization, 'Bearer ghp_t');
+});
+
+await testAsync('writes pass keepalive through to fetch', async () => {
+    const fetchFn = fakeGraphqlFetch([{ json: { data: {} } }]);
+    const api = createGithubApi(() => 't', fetchFn);
+    await api.setIssueFieldNumber('I_1', 'F_1', 2, { keepalive: true });
+    assert.equal(fetchFn.requests[0].init.keepalive, true);
+    assert.deepEqual(fetchFn.requests[0].body.variables, { issue: 'I_1', field: 'F_1', value: 2 });
+});
+
+await testAsync('listRepoIssues follows page cursors', async () => {
+    const issue = (n) => ({ id: `I_${n}`, number: n, title: `t${n}`, updatedAt: '', repository: { id: 'R', nameWithOwner: 'o/r' } });
+    const fetchFn = fakeGraphqlFetch([
+        { json: { data: { node: { issues: { nodes: [issue(1)], pageInfo: { hasNextPage: true, endCursor: 'c1' } } } } } },
+        { json: { data: { node: { issues: { nodes: [issue(2)], pageInfo: { hasNextPage: false } } } } } },
+    ]);
+    const issues = await createGithubApi(() => 't', fetchFn).listRepoIssues('R');
+    assert.deepEqual(issues.map(i => i.number), [1, 2]);
+    assert.equal(fetchFn.requests[1].body.variables.after, 'c1');
+});
+
+await testAsync('listProjectIssues keeps open issues only, newest first', async () => {
+    const content = (n, state, updatedAt) => ({ content: {
+        id: `I_${n}`, number: n, title: 't', updatedAt, state, repository: { id: 'R', nameWithOwner: 'o/r' } } });
+    const fetchFn = fakeGraphqlFetch([{ json: { data: { node: { items: {
+        nodes: [content(1, 'OPEN', '2026-01-01'), content(2, 'CLOSED', '2026-03-01'), { content: {} }, content(3, 'OPEN', '2026-02-01')],
+        pageInfo: { hasNextPage: false } } } } } }]);
+    const issues = await createGithubApi(() => 't', fetchFn).listProjectIssues('P');
+    assert.deepEqual(issues.map(i => i.number), [3, 1]);
+});
+
+await testAsync('createIssue sends the label, parent, project and estimate', async () => {
+    const fetchFn = fakeGraphqlFetch([{ json: { data: { createIssue: { issue: {
+        id: 'I_9', number: 9, title: 'New', updatedAt: '', repository: { id: 'R', nameWithOwner: 'o/r' } } } } } }]);
+    const issue = await createGithubApi(() => 't', fetchFn).createIssue({
+        repoId: 'R', title: 'New', issueTypeId: 'IT_task', parentIssueId: 'I_epic', projectId: 'P',
+        labelIds: ['L'], assigneeIds: ['U'], issueFields: [{ fieldId: 'F_est', numberValue: 3 }],
+    });
+    assert.equal(issue.number, 9);
+    assert.deepEqual(fetchFn.requests[0].body.variables, {
+        repo: 'R', title: 'New', type: 'IT_task', parent: 'I_epic', projects: ['P'],
+        labels: ['L'], assignees: ['U'], fields: [{ fieldId: 'F_est', numberValue: 3 }],
+    });
+});
+
+// --- picker helpers ---
+console.log('\ngithub picker');
+
+test('parseProjectChoice', () => {
+    assert.deepEqual(parseProjectChoice('none'), { kind: 'none' });
+    assert.deepEqual(parseProjectChoice(''), { kind: 'none' });
+    assert.deepEqual(parseProjectChoice('repo:R_1'), { kind: 'repo', id: 'R_1' });
+    assert.deepEqual(parseProjectChoice('project:PVT_a:b'), { kind: 'project', id: 'PVT_a:b' });
+    assert.deepEqual(parseProjectChoice('repo:'), { kind: 'none' });
+});
+
+test('issueLabel', () => {
+    assert.equal(issueLabel({ repo: 'o/r', number: 12, title: 'Fix it' }), 'o/r#12 Fix it');
+});
+
+test('defaultRepoId picks the most common repo, else the first repo', () => {
+    const issues = [{ repoId: 'A' }, { repoId: 'B' }, { repoId: 'B' }];
+    assert.equal(defaultRepoId(issues, [{ id: 'Z' }]), 'B');
+    assert.equal(defaultRepoId([], [{ id: 'Z' }]), 'Z');
+    assert.equal(defaultRepoId([], []), null);
 });
 
 // --- Summary ---

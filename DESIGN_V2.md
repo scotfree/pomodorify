@@ -186,19 +186,37 @@ doesn't use it and keeping it unprefixed survives a later replacement.
 
 ### Out of v1
 
-GitHub logging, server-side storage, a fetchable log URL, YouTube, multiple users,
+Server-side storage, a fetchable log URL, YouTube, multiple users,
 app-owned playlists, and metadata filters.
 
 ## Options left open (later)
 
-### GitHub issue logger
-- Choose an issue from a dropdown instead of typing a project name. On session end,
-  increment the org-level **Hours worked** number field on the issue's project item.
-- This needs a GitHub token with project access. For a single user, use a pasted
-  fine-grained token in `localStorage`. For multiple users, use OAuth via a Lambda,
-  because GitHub's token exchange needs a client secret.
-- It's a second implementation of the logger interface, and it serves as the test that
-  the interface is real.
+### GitHub issue logger (built, branch `v2-github`)
+- The preview's **Project** dropdown lists "No Project" (local totals, typed title as
+  before), then open Projects v2 (yours and your orgs'), then repos. Choosing a project
+  or repo loads its open issues into an **Issue** dropdown, which also offers
+  **+ New issue**.
+- **Where the hours go:** an ordered list of field names (setting, default
+  `Worked Hours`, `Time Actual[hours]`). For each name: an org-level issue field, then a
+  Projects v2 number field on any project the issue is in. The first match wins, and an
+  unset value counts as 0. With no match, an "hours worked" comment is posted. See
+  `github/hours-target.js`.
+- **No atomic increment** in GitHub's API, so it's read, add, write. Stop and playlist
+  end re-read first. On `pagehide` the target resolved at session start is used, and the
+  write goes out as a single `keepalive` request.
+- **Pending queue** (`track_github_pending`): each write is recorded before it's sent and
+  removed on success, and it's retried on the next load. A retry skips writes that
+  landed but didn't report back: a field already holding the value we meant to write, or
+  a comment with this session's `<!-- pomodorify-session:ID -->` marker.
+- **New issue:** title, type (default Task), epic (any open Epic in the org, linked as
+  parent), Estimated Hours (if the org has the field). It's assigned to you and labeled
+  `pomodorify created` (the label is created if missing). From a project, you also pick a
+  repo, defaulting to where most of the project's issues live. Creating is a separate
+  button, not part of Start, because `playback.play()` can't wait on anything.
+- Local totals always get the hours too, keyed `owner/repo#N Title`.
+- **Auth:** a pasted classic PAT (`repo`, `project`, `read:org`) in `track_github_token`.
+  Fine-grained tokens (as of late 2026, unverified) can't reach user-owned Projects v2. Multiple users would need
+  OAuth via a Lambda.
 
 ### Fetchable log / cross-device history
 - Add a Lambda on `/api/*` behind the existing CloudFront distribution (same origin, no

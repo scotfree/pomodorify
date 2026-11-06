@@ -8,6 +8,7 @@ Pomodorify is a pure client-side static web app. No build step, no package manag
 
 - **Root app** (`/`): `frontend/index.html`, `frontend/app.js`, `frontend/style.css`. It builds a duration-fitted playlist and saves or plays it in Spotify.
 - **Track app** (`/track/index.html`, `frontend/track/`): v2 of the design in `DESIGN_V2.md`. It plays the playlist in the tab via the Web Playback SDK, runs a session clock, logs time per project to `localStorage`, and offers JSON/CSV export and replay of saved `POMO_` playlists. It may eventually replace the root app.
+- **Spotless app** (`/spotless/index.html`, `frontend/spotless/`): a prototype of the track app with YouTube instead of Spotify, so it works for anyone (no Spotify developer-mode allowlist). Search YouTube, fit the results to a duration, name the playlist and keep it in `localStorage` (`spotless_playlists`, exportable/importable as a JSON file), play it in the tab with the IFrame Player API. Needs a YouTube Data API v3 key: pasted into the page (`spotless_youtube_key`) or baked in as `BUILT_IN_KEY` in `spotless/settings.js` (restrict it to the site's referrers).
 
 Deployed at `https://pomodorifi.es`.
 
@@ -16,13 +17,19 @@ Deployed at `https://pomodorifi.es`.
 - **The track app never edits shared files.** It only reads `../utils.js`, `../style.css` and `../assets/`. New logic goes in `frontend/track/`, even if it duplicates the root app. The root app and its deployment are meant to stay unchanged while `/track` matures.
 - **Track app storage keys are prefixed `track_`**, so its Spotify session never touches the root app's. You log in to each app separately. The exception is `pomodorify_hours`, which is unprefixed on purpose: the root app doesn't use it, and staying unprefixed means a later replacement keeps the data.
 
+## Spotless and the track app
+
+- Spotless never edits track app or shared files. It **imports the platform-neutral track modules read-only**: `track/session.js`, `track/export.js`, `track/loggers/*`, `track/github/*`. So changes to those must keep `tests/spotless.test.mjs` (and the Spotless page) working.
+- Deliberately shared state: `pomodorify_hours` (same local totals as the track app) and the GitHub settings and pending queue (`track_github_*`), so you paste the token once and hours land in one place. Spotless's own keys are prefixed `spotless_`.
+- No login and no redirect URI: it's an API key, not OAuth.
+
 ## Running Locally
 
 ```bash
 cd frontend && python3 -m http.server 8080
 ```
 
-Open `http://127.0.0.1:8080` (root) or `http://127.0.0.1:8080/track/index.html` (track). The redirect URI is auto-detected based on hostname. Use `127.0.0.1` not `localhost` — Spotify rejects `localhost` as insecure in the Developer Dashboard.
+Open `http://127.0.0.1:8080` (root) or `http://127.0.0.1:8080/track/index.html` (track) or `http://127.0.0.1:8080/spotless/index.html` (spotless). The redirect URI is auto-detected based on hostname. Use `127.0.0.1` not `localhost` — Spotify rejects `localhost` as insecure in the Developer Dashboard.
 
 Registered redirect URIs: `http://127.0.0.1:8080`, `https://pomodorifi.es`, `http://127.0.0.1:8080/track/index.html`, `https://pomodorifi.es/track/index.html`. Port 8080 is fixed by these, so check nothing else is bound to it (`lsof -nP -iTCP:8080 -sTCP:LISTEN`). Other projects' dev servers have used it.
 
@@ -38,7 +45,11 @@ node tests/test.mjs
 node tests/track.test.mjs
 ```
 
-CI runs both. `tests/test.mjs` covers the root app's pure functions in `frontend/utils.js`. The `selectTracksForDuration` function accepts an injectable shuffle function as a third argument (defaults to `Math.random`).
+```bash
+node tests/spotless.test.mjs
+```
+
+CI runs all three. `tests/test.mjs` covers the root app's pure functions in `frontend/utils.js`. The `selectTracksForDuration` function accepts an injectable shuffle function as a third argument (defaults to `Math.random`).
 
 `tests/track.test.mjs` covers the track app. Everything with logic takes its dependencies (storage, `now`, `fetch`, the SDK loader, `random`) as injectable arguments. That includes the playback adapter, which is tested against a fake `Spotify.Player`. The end-detection fixtures are real Safari spike logs. DOM wiring (`track/track.js`) and the real SDK are tested by hand in the browser.
 
@@ -68,6 +79,13 @@ npm run deploy   # cdk deploy --profile personal
 - `playback/spotify.js`: the Web Playback SDK adapter. `playback/spotify-state.js`: pure state interpretation and end detection.
 - `loggers/local.js`: `pomodorify_hours` totals. `export.js`: CSV/JSON formatting.
 - `github/`: `api.js` (GraphQL), `hours-target.js` (which field gets the hours), `settings.js` (token, field names), `picker.js`. `loggers/github.js`: read-add-write with a pending retry queue.
+
+### Spotless app (`frontend/spotless/`)
+
+- `spotless.js`: the UI, adapted from `track/track.js`. Sections `key`, `playlist`, `preview`, `session`. The YouTube player (`#player-wrap`) sits outside the sections, parked off-screen except during a session: its iframe must be laid out to load, mustn't be moved (that reloads it), and must be visible (≥200×200) while playing.
+- `youtube-api.js`: `search.list` + `videos.list` for durations. Search passes stop once there are 15 tracks: 4–20 min Music (`videoDuration=medium`), then short Music, then 4–20 min of any category. Without the duration filter, popular searches are mostly hours-long mixes and streams. Drops live, unembeddable, <1 min and >20 min videos. 101 quota units per search when the first pass is enough, up to 303 (10k/day default).
+- `playlists.js`: the `spotless_playlists` store (newest first), export/import. `settings.js`: the API key.
+- `playback/youtube.js`: the adapter. It steps through the list itself with `loadVideoById` so a video that won't play (errors 100/101/150) is skipped instead of stopping the session.
 
 ### Root app
 

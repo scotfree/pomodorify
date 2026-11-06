@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pomodorify Spotless</title>
+    <link rel="icon" type="image/png" href="../pomodorify_icon.png">
+    <link rel="stylesheet" href="../style.css">
+    <link rel="stylesheet" href="spotless.css">
+</head>
+<body>
+    <div id="bg"></div>
+    <div class="container">
+        <h1>Pomodorify <span class="badge">spotless</span></h1>
+
+        <div id="key-section">
+            <h2>Music from YouTube, no Spotify needed.</h2>
+            <p class="note">Spotless searches YouTube with a YouTube Data API v3 key.
+                It's kept in this browser only.</p>
+            <div class="form-group">
+                <label for="key-input">YouTube API key:</label>
+                <input type="password" id="key-input" autocomplete="off" placeholder="AIza…">
+            </div>
+            <button id="key-save-button">Continue</button>
+        </div>
+
+        <div id="playlist-section" style="display: none;">
+            <h2>Build a session playlist.</h2>
+            <div class="search-row">
+                <div class="search-input-frame">
+                    <input type="text" id="search-input" placeholder="Search YouTube, e.g. lofi beats">
+                </div>
+            </div>
+            <div class="form-group">
+                <label for="duration">Duration (minutes):</label>
+                <input type="number" id="duration" value="25" min="1" max="120">
+            </div>
+            <button id="generate-button">Generate Playlist</button>
+
+            <div class="form-group replay" id="replay-group" hidden>
+                <label for="replay-select">Your playlists:</label>
+                <select id="replay-select"></select>
+            </div>
+
+            <div class="totals" id="totals" hidden>
+                <h3>Logged time</h3>
+                <table>
+                    <thead><tr><th>Project</th><th>Hours</th></tr></thead>
+                    <tbody id="totals-body"></tbody>
+                </table>
+                <div class="button-group">
+                    <button id="export-json-button">EXPORT JSON</button>
+                    <button id="export-csv-button">EXPORT CSV</button>
+                    <button id="clear-totals-button" class="back-button">CLEAR</button>
+                </div>
+            </div>
+
+            <details class="github-settings">
+                <summary>GitHub (log time to issues)</summary>
+                <p class="note" id="github-status"></p>
+                <div class="form-group">
+                    <label for="github-token">Token (classic, scopes: repo, project, read:org):</label>
+                    <input type="password" id="github-token" autocomplete="off" placeholder="ghp_…">
+                </div>
+                <div class="form-group">
+                    <label for="github-fields">Hours fields, tried in order:</label>
+                    <input type="text" id="github-fields">
+                </div>
+                <div class="button-group">
+                    <button id="github-save-button">SAVE</button>
+                    <button id="github-clear-button" class="back-button">REMOVE TOKEN</button>
+                </div>
+            </details>
+
+            <details class="github-settings">
+                <summary>Playlists file (backup or move to another browser)</summary>
+                <p class="note" id="playlists-status"></p>
+                <div class="button-group">
+                    <button id="export-playlists-button">EXPORT PLAYLISTS</button>
+                    <button id="import-playlists-button">IMPORT PLAYLISTS</button>
+                </div>
+                <input type="file" id="import-playlists-file" accept="application/json,.json" hidden>
+            </details>
+
+            <details class="github-settings">
+                <summary>YouTube API key</summary>
+                <p class="note" id="key-status"></p>
+                <div class="form-group">
+                    <label for="key-change-input">New key:</label>
+                    <input type="password" id="key-change-input" autocomplete="off" placeholder="AIza…">
+                </div>
+                <div class="button-group">
+                    <button id="key-change-button">SAVE</button>
+                    <button id="key-remove-button" class="back-button">REMOVE KEY</button>
+                </div>
+            </details>
+        </div>
+
+        <div id="preview-section" style="display: none;">
+            <h2>Preview Playlist</h2>
+            <div class="playlist-info">
+                <p>Source: <span id="preview-source-name"></span></p>
+                <p>Duration: <span id="preview-duration"></span></p>
+                <p>Number of tracks: <span id="preview-track-count"></span></p>
+            </div>
+            <div class="track-list" id="preview-tracks"></div>
+
+            <div class="form-group">
+                <label for="preview-playlist-name">Playlist name:</label>
+                <div class="name-row">
+                    <input type="text" id="preview-playlist-name">
+                    <button id="save-button">SAVE</button>
+                    <button id="delete-button" class="back-button" hidden>DELETE</button>
+                </div>
+                <p id="save-note" class="note" hidden></p>
+            </div>
+
+            <div class="form-group">
+                <label for="project-select">Project:</label>
+                <select id="project-select">
+                    <option value="none">No Project</option>
+                    <optgroup label="Projects" id="project-options"></optgroup>
+                    <optgroup label="Repos" id="repo-options"></optgroup>
+                </select>
+                <p id="github-note" class="note" hidden></p>
+            </div>
+
+            <div class="form-group" id="title-group">
+                <label for="project-input">Title (optional, for logging time locally):</label>
+                <input type="text" id="project-input" list="project-list" placeholder="No title: time isn't logged">
+                <datalist id="project-list"></datalist>
+            </div>
+
+            <div class="form-group" id="issue-group" hidden>
+                <label for="issue-select">Issue:</label>
+                <select id="issue-select"></select>
+                <p id="issue-note" class="note" hidden></p>
+            </div>
+
+            <div class="new-issue" id="new-issue-form" hidden>
+                <div class="form-group" id="new-issue-repo-group" hidden>
+                    <label for="new-issue-repo">Repo:</label>
+                    <select id="new-issue-repo"></select>
+                </div>
+                <div class="form-group">
+                    <label for="new-issue-title">Title:</label>
+                    <input type="text" id="new-issue-title">
+                </div>
+                <div class="form-group" id="new-issue-type-group" hidden>
+                    <label for="new-issue-type">Type:</label>
+                    <select id="new-issue-type"></select>
+                </div>
+                <div class="form-group" id="new-issue-epic-group" hidden>
+                    <label for="new-issue-epic">Epic:</label>
+                    <select id="new-issue-epic"></select>
+                </div>
+                <div class="form-group" id="new-issue-estimate-group" hidden>
+                    <label for="new-issue-estimate">Estimated Hours:</label>
+                    <input type="number" id="new-issue-estimate" min="0" step="0.25">
+                </div>
+                <button id="create-issue-button">CREATE ISSUE</button>
+                <p id="new-issue-status" class="note" hidden></p>
+            </div>
+            <p id="player-note" class="note" hidden></p>
+
+            <div class="button-group">
+                <button id="back-button" class="back-button">BACK</button>
+                <button id="regenerate-button">REBUILD</button>
+                <button id="start-button" disabled>START SESSION</button>
+            </div>
+
+        </div>
+
+        <div id="session-section" style="display: none;">
+            <h2 id="session-project"></h2>
+            <div class="session-clock" id="session-elapsed">0:00</div>
+            <div class="session-now">
+                <div class="track-name" id="session-track-name">Starting…</div>
+                <div class="track-artist" id="session-track-artist"></div>
+            </div>
+            <p class="session-progress" id="session-progress"></p>
+            <div class="button-group" id="session-controls">
+                <button id="pause-button">PAUSE</button>
+                <button id="stop-button" class="back-button">STOP</button>
+            </div>
+            <div id="session-done" hidden>
+                <p id="session-summary"></p>
+                <p id="session-github" class="note"></p>
+                <button id="new-session-button">New Session</button>
+            </div>
+        </div>
+
+        <!-- Outside the sections so the iframe is never inside display: none
+             (it must be laid out to load) and never moved (that reloads it).
+             Parked off-screen except during a session. -->
+        <div id="player-wrap" class="parked"><div id="player"></div></div>
+    </div>
+    <script type="module" src="spotless.js"></script>
+</body>
+</html>

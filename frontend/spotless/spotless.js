@@ -22,6 +22,7 @@ import { createYoutubeSettings } from './settings.js';
 import { createYoutubeApi } from './youtube-api.js';
 import { createPlaylistStore } from './playlists.js';
 import { createYoutubePlayback } from './playback/youtube.js';
+import { buildPlaylist, parseLines, cachedSearch, fetchSpotifyTitle } from './build.js';
 
 const BACKGROUNDS = [
     '../assets/tta_icetroid.jpg',
@@ -42,6 +43,7 @@ const youtubeApi = createYoutubeApi(youtubeSettings.getKey);
 const playlists = createPlaylistStore();
 const playback = createYoutubePlayback({ element: 'player' });
 const logger = createLocalLogger();
+const searchSong = cachedSearch((query) => youtubeApi.searchSong(query));
 
 const CREATED_LABEL = { name: 'pomodorify created', color: 'e4572e', description: 'Created from Pomodorify' };
 const githubSettings = createGithubSettings();
@@ -279,6 +281,149 @@ async function importPlaylists(event) {
         console.error(error);
         setNote('playlists-status', `Couldn't import that file: ${error.message}`);
     }
+}
+
+// --- build from a list ---
+
+let built = null;  // the playlist the last build saved
+
+function openBuild() {
+    const minutes = parseInt($('duration').value, 10) || 25;
+    $('build-input').hidden = false;
+    $('build-output').hidden = true;
+    $('build-duration-note').textContent = `Fits to ${minutes} minutes (the Duration setting): lines are picked at random `
+        + 'and only the ones needed are searched. Each search uses about 1% of the day\'s shared YouTube quota.';
+    $('build-dialog').showModal();
+    $('build-title').focus();
+}
+
+function el(tag, className, text) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined) node.textContent = text;
+    return node;
+}
+
+function videoLink(track) {
+    const a = el('a', '', track.name);
+    a.href = `https://www.youtube.com/watch?v=${encodeURIComponent(track.id)}`;
+    a.target = '_blank';
+    a.rel = 'noopener';
+    return a;
+}
+
+function trackItem(track, prefix = '') {
+    const li = el('li');
+    if (prefix) li.append(prefix);
+    li.append(videoLink(track), ` — ${track.artist} (${formatDuration(track.duration_ms)})`);
+    return li;
+}
+
+function renderLogEntry(entry) {
+    const li = el('li');
+    const steps = el('ul');
+    if (entry.kind === 'line') {
+        li.append(el('div', 'line', entry.line));
+        if (entry.spotify) steps.append(el('li', '', `Spotify link → “${entry.spotify}”`));
+        if (entry.query) {
+            const searched = el('li', '', 'Searched ');
+            searched.append(el('code', '', entry.query));
+            if (entry.cached) searched.append(el('span', 'muted', ' (cached, no quota used)'));
+            steps.append(searched);
+        }
+        for (const r of entry.rejected) steps.append(el('li', 'skip', `Skipped “${r.name}”: ${r.reason}`));
+        if (entry.pick) steps.append(trackItem(entry.pick, 'Picked '));
+        else if (entry.error) steps.append(el('li', 'fail', `Failed: ${entry.error}. Line skipped.`));
+        else steps.append(el('li', 'fail', 'Nothing usable found. Line skipped.'));
+    } else if (entry.kind === 'unused') {
+        const details = el('details', 'muted');
+        details.append(el('summary', '', `${entry.count} line${entry.count === 1 ? '' : 's'} not needed this time`));
+        const list = el('ul');
+        for (const line of entry.lines) list.append(el('li', '', line));
+        details.append(list);
+        li.append(details);
+    } else if (entry.source === 'results') {
+        li.append(el('div', 'line', 'Not long enough yet: filled from the other results of these searches'));
+        for (const t of entry.picks) steps.append(trackItem(t));
+        if (entry.picks.length === 0) steps.append(el('li', 'muted', 'None left to use.'));
+    } else {
+        li.append(el('div', 'line', 'Still not long enough: random instrumental bluegrass'));
+        const searched = el('li', '', 'Searched ');
+        searched.append(el('code', '', entry.query));
+        steps.append(searched);
+        for (const t of entry.picks) steps.append(trackItem(t));
+        if (entry.error) steps.append(el('li', 'fail', `Failed: ${entry.error}`));
+        else if (entry.picks.length === 0) steps.append(el('li', 'fail', 'Nothing usable found.'));
+    }
+    li.append(steps);
+    return li;
+}
+
+// YouTube makes an unsaved playlist from up to 50 video ids.
+function youtubeListUrl(tracks) {
+    return `https://www.youtube.com/watch_videos?video_ids=${tracks.slice(0, 50).map(t => t.id).join(',')}`;
+}
+
+async function createBuild() {
+    const lines = parseLines($('build-lines').value);
+    if (lines.length === 0) {
+        alert('Please enter at least one song.');
+        return;
+    }
+    const minutes = parseInt($('duration').value, 10) || 25;
+    const title = $('build-title').value.trim() || `List · ${minutes} min · ${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+
+    $('build-input').hidden = true;
+    $('build-output').hidden = false;
+    $('build-log').replaceChildren();
+    $('build-result').hidden = true;
+    $('build-show-button').hidden = true;
+    $('build-close-button').disabled = true;
+    $('build-status').textContent = `Building “${title}” (${minutes} min) from ${lines.length} line${lines.length === 1 ? '' : 's'}…`;
+    built = null;
+
+    try {
+        const { tracks, totalMs } = await buildPlaylist({
+            lines,
+            minutes,
+            searchSong,
+            spotifyTitle: (id) => fetchSpotifyTitle(id),
+            onLog: (entry) => $('build-log').append(renderLogEntry(entry)),
+        });
+        const result = $('build-result');
+        result.replaceChildren();
+        if (tracks.length === 0) {
+            result.append(el('p', 'fail', 'Nothing usable was found, so nothing was saved.'));
+        } else {
+            built = playlists.save({ name: title, minutes, tracks });
+            renderReplays();
+            const saved = el('p');
+            saved.append('Saved ', el('strong', '', `“${built.name}”`),
+                ` · ${tracks.length} tracks · ${formatDuration(totalMs)}`);
+            const link = el('a', '', 'Open it on YouTube');
+            link.href = youtubeListUrl(tracks);
+            link.target = '_blank';
+            link.rel = 'noopener';
+            result.append(saved, link);
+            $('build-show-button').hidden = false;
+        }
+        result.hidden = false;
+        $('build-status').textContent = 'Done. Here\'s what happened:';
+    } catch (error) {
+        console.error(error);
+        $('build-status').textContent = error.reason === 'quotaExceeded'
+            ? 'Stopped: the YouTube search quota for today is used up. Nothing was saved. Try again tomorrow.'
+            : `Stopped: ${error.message}. Nothing was saved.`;
+    } finally {
+        $('build-close-button').disabled = false;
+    }
+}
+
+function showBuilt() {
+    $('build-dialog').close();
+    if (!built) return;
+    $('replay-select').value = built.id;
+    replay();
 }
 
 // --- YouTube key ---
@@ -707,6 +852,13 @@ function wireEvents() {
     $('back-button').addEventListener('click', () => showSection('playlist-section'));
     $('regenerate-button').addEventListener('click', generate);
     $('start-button').addEventListener('click', () => { if (playerReady && preview) startSession(); });
+    $('build-open-button').addEventListener('click', openBuild);
+    $('build-cancel-button').addEventListener('click', () => $('build-dialog').close());
+    $('build-create-button').addEventListener('click', createBuild);
+    $('build-close-button').addEventListener('click', () => $('build-dialog').close());
+    $('build-show-button').addEventListener('click', showBuilt);
+    // Esc closes the dialog; don't let it while a build is running.
+    $('build-dialog').addEventListener('cancel', (e) => { if ($('build-close-button').disabled && !$('build-output').hidden) e.preventDefault(); });
     $('save-button').addEventListener('click', savePreview);
     $('delete-button').addEventListener('click', deletePreview);
     $('export-playlists-button').addEventListener('click', exportPlaylists);

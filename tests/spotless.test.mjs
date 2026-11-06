@@ -3,6 +3,11 @@ import { parseIsoDuration, videosToTracks, createYoutubeApi, MIN_TRACK_MS, MAX_T
 import { createPlaylistStore, PLAYLISTS_KEY } from '../frontend/spotless/playlists.js';
 import { createYoutubeSettings, KEY_STORAGE } from '../frontend/spotless/settings.js';
 import { createYoutubePlayback, YT_STATE } from '../frontend/spotless/playback/youtube.js';
+import { classifyVideos, SONG_RANGE } from '../frontend/spotless/youtube-api.js';
+import {
+    buildPlaylist, parseLines, songQuery, spotifyTrackId, shuffle, cachedSearch, fetchSpotifyTitle,
+    FILLER_QUERY, CACHE_KEY,
+} from '../frontend/spotless/build.js';
 
 let passed = 0;
 let failed = 0;
@@ -378,6 +383,209 @@ test('a second play starts the new list from the top', async () => {
     await adapter.play([{ id: 'w1', duration_ms: 1 }]);
     assert.deepEqual(player.loaded, ['v1', 'v2', 'w1']);
     assert.deepEqual(changes.at(-1), { playing: false, trackIndex: 0, ended: false });
+});
+
+
+// --- build from a list ---
+section('build: parsing');
+
+test('parseLines trims, drops blanks, list markers and repeats', () => {
+    assert.deepEqual(parseLines('  Johnny Cash - Hurt \n\n1. Song A\n2) Song B\n- Song C\n* song a\n•  Song   D\r\nhurt'),
+        ['Johnny Cash - Hurt', 'Song A', 'Song B', 'Song C', 'Song D', 'hurt']);
+});
+
+test('parseLines keeps a leading number that is part of the name', () => {
+    assert.deepEqual(parseLines('99 Luftballons\n1979'), ['99 Luftballons', '1979']);
+});
+
+test('songQuery adds " audio" once and drops quotes', () => {
+    assert.equal(songQuery('Johnny Cash - "Hurt"'), 'Johnny Cash - Hurt audio');
+    assert.equal(songQuery('Hurt (audio)'), 'Hurt (audio)');
+});
+
+test('spotifyTrackId recognizes track links and URIs', () => {
+    const id = '4cOdK2wGLETKBW3PvgPWqT';
+    assert.equal(spotifyTrackId(`https://open.spotify.com/track/${id}`), id);
+    assert.equal(spotifyTrackId(`https://open.spotify.com/track/${id}?si=abc123`), id);
+    assert.equal(spotifyTrackId(`https://open.spotify.com/intl-de/track/${id}`), id);
+    assert.equal(spotifyTrackId(`spotify:track:${id}`), id);
+    assert.equal(spotifyTrackId(`https://open.spotify.com/album/${id}`), null);
+    assert.equal(spotifyTrackId('Johnny Cash - Hurt'), null);
+});
+
+test('shuffle is a permutation', () => {
+    assert.deepEqual(shuffle([1, 2, 3, 4], () => 0.3).sort(), [1, 2, 3, 4]);
+});
+
+test('classifyVideos explains rejections', () => {
+    const out = classifyVideos([
+        video('ok', 'PT3M'), video('live', 'P0D', { live: 'live' }),
+        video('blocked', 'PT3M', { embeddable: false }), video('album', 'PT40M'),
+    ], SONG_RANGE);
+    assert.equal(out[0].track.id, 'ok');
+    assert.deepEqual(out.slice(1).map(r => r.reason), ['live stream', 'not embeddable', '40:00, outside 1:00–12:00']);
+});
+
+section('build: algorithm');
+
+const MIN = 60000;
+const t = (id, min = 5) => ({ id, name: `Song ${id}`, artist: 'A', duration_ms: min * MIN });
+const ok = (...tracks) => ({ results: tracks.map(track => ({ track })) });
+const noShuffle = () => 0.999;  // shuffle() with random ~1 keeps the order
+
+function fakeSearch(table) {
+    const calls = [];
+    const fn = async (query) => {
+        calls.push(query);
+        if (!(query in table)) return { results: [] };
+        const v = table[query];
+        if (v instanceof Error) throw v;
+        return v;
+    };
+    fn.calls = calls;
+    return fn;
+}
+
+test('takes the first usable result per line and stops searching once full', async () => {
+    const search = fakeSearch({
+        'a audio': ok(t('a1'), t('a2')),
+        'b audio': { results: [{ id: 'x', name: 'Live!', reason: 'live stream' }, { track: t('b1') }] },
+        'c audio': ok(t('c1')),
+        'd audio': ok(t('d1')),
+    });
+    const { tracks, log } = await buildPlaylist({ lines: ['a', 'b', 'c', 'd'], minutes: 10, searchSong: search, random: noShuffle });
+    assert.deepEqual(tracks.map(x => x.id), ['a1', 'b1']);
+    assert.deepEqual(search.calls, ['a audio', 'b audio']);
+    assert.deepEqual(log[1].rejected, [{ name: 'Live!', reason: 'live stream' }]);
+    assert.deepEqual(log.at(-1), { kind: 'unused', count: 2, lines: ['c', 'd'] });
+});
+
+test('adds one track over the limit, like selectTracksForDuration', async () => {
+    const search = fakeSearch({ 'a audio': ok(t('a', 4)), 'b audio': ok(t('b', 4)), 'c audio': ok(t('c', 4)) });
+    const { tracks } = await buildPlaylist({ lines: ['a', 'b', 'c'], minutes: 6, searchSong: search, random: noShuffle });
+    assert.deepEqual(tracks.map(x => x.id), ['a', 'b']);
+});
+
+test('a line with nothing usable is skipped', async () => {
+    const search = fakeSearch({ 'b audio': ok(t('b', 30)) });
+    const { tracks, log } = await buildPlaylist({ lines: ['a', 'b'], minutes: 25, searchSong: search, random: noShuffle });
+    assert.deepEqual(tracks.map(x => x.id), ['b']);
+    assert.equal(log[0].pick, null);
+});
+
+test('the same video is not picked twice', async () => {
+    const search = fakeSearch({ 'a audio': ok(t('same')), 'a again audio': ok(t('same'), t('other')) });
+    const { tracks, log } = await buildPlaylist({ lines: ['a', 'a again'], minutes: 60, searchSong: search, random: noShuffle });
+    assert.deepEqual(tracks.slice(0, 2).map(x => x.id), ['same', 'other']);
+    assert.equal(log[1].rejected[0].reason, 'already in the playlist');
+});
+
+test('short pool: fills from other results, then bluegrass', async () => {
+    const search = fakeSearch({
+        'a audio': ok(t('a1'), t('a2')),
+        [FILLER_QUERY]: ok(t('g1'), t('g2'), t('g3'), t('g4')),
+    });
+    const { tracks, log } = await buildPlaylist({ lines: ['a'], minutes: 20, searchSong: search, random: noShuffle });
+    assert.deepEqual(tracks.map(x => x.id), ['a1', 'a2', 'g1', 'g2']);
+    assert.deepEqual(log.map(e => e.source ?? e.kind), ['line', 'results', 'bluegrass']);
+    assert.deepEqual(search.calls, ['a audio', FILLER_QUERY]);
+});
+
+test('no bluegrass search when other results are enough', async () => {
+    const search = fakeSearch({ 'a audio': ok(t('a1'), t('a2'), t('a3')) });
+    const { tracks, log } = await buildPlaylist({ lines: ['a'], minutes: 12, searchSong: search, random: noShuffle });
+    assert.deepEqual(tracks.map(x => x.id), ['a1', 'a2', 'a3']);
+    assert.equal(log.some(e => e.source === 'bluegrass'), false);
+});
+
+test('Spotify links are looked up, then searched by title', async () => {
+    const id = '4cOdK2wGLETKBW3PvgPWqT';
+    const search = fakeSearch({ 'Hurt audio': ok(t('h', 30), t('h2')) });
+    const { log } = await buildPlaylist({
+        lines: [`https://open.spotify.com/track/${id}?si=x`], minutes: 3, searchSong: search,
+        spotifyTitle: async (got) => { assert.equal(got, id); return 'Hurt'; }, random: noShuffle,
+    });
+    assert.equal(log[0].spotify, 'Hurt');
+    assert.equal(log[0].query, 'Hurt audio');
+});
+
+test('a failed Spotify lookup or search skips just that line', async () => {
+    const id = '4cOdK2wGLETKBW3PvgPWqT';
+    const search = fakeSearch({ 'bad audio': new Error('boom'), 'good audio': ok(t('g')) });
+    const { tracks, log } = await buildPlaylist({
+        lines: [`spotify:track:${id}`, 'bad', 'good'], minutes: 3, searchSong: search,
+        spotifyTitle: async () => { throw new Error('Spotify lookup failed (404)'); }, random: noShuffle,
+    });
+    assert.deepEqual(tracks.map(x => x.id), ['g']);
+    assert.deepEqual(log.slice(0, 2).map(e => e.error), ['Spotify lookup failed (404)', 'boom']);
+});
+
+test('running out of quota stops the build', async () => {
+    const quota = Object.assign(new Error('quota'), { reason: 'quotaExceeded' });
+    const search = fakeSearch({ 'a audio': quota });
+    await assert.rejects(buildPlaylist({ lines: ['a', 'b'], minutes: 25, searchSong: search, random: noShuffle }), /quota/);
+});
+
+test('lines are tried in random order', async () => {
+    const search = fakeSearch({ 'a audio': ok(t('a')), 'b audio': ok(t('b')) });
+    const { tracks } = await buildPlaylist({ lines: ['a', 'b'], minutes: 3, searchSong: search, random: () => 0 });
+    assert.deepEqual(tracks.map(x => x.id), ['b']);
+});
+
+test('onLog is called live for each entry', async () => {
+    const seen = [];
+    await buildPlaylist({ lines: ['a', 'b'], minutes: 3, searchSong: fakeSearch({ 'a audio': ok(t('a')) }),
+        random: noShuffle, onLog: (e) => seen.push(e.kind) });
+    assert.deepEqual(seen, ['line', 'unused']);
+});
+
+section('build: search cache and Spotify lookup');
+
+test('cache answers a repeat query without searching', async () => {
+    const storage = fakeStorage();
+    const search = fakeSearch({ 'a audio': ok(t('a')) });
+    const cached = cachedSearch(search, { storage });
+    assert.equal((await cached('a audio')).cached, false);
+    const again = await cached('A Audio');
+    assert.equal(again.cached, true);
+    assert.equal(again.results[0].track.id, 'a');
+    assert.equal(search.calls.length, 1);
+    assert.ok(storage.data[CACHE_KEY]);
+});
+
+test('cache expires old entries and keeps only the newest', async () => {
+    let now = 0;
+    const search = fakeSearch({});
+    const cached = cachedSearch(search, { storage: fakeStorage(), now: () => now, max: 2, maxAgeMs: 100 });
+    await cached('q1'); now = 1; await cached('q2'); now = 2; await cached('q3');
+    now = 3; await cached('q1');           // evicted (max 2), searched again
+    now = 500; await cached('q3');         // expired, searched again
+    assert.deepEqual(search.calls, ['q1', 'q2', 'q3', 'q1', 'q3']);
+});
+
+test('fetchSpotifyTitle reads the oEmbed title', async () => {
+    let asked = '';
+    const title = await fetchSpotifyTitle('ID', async (url) => { asked = url; return { ok: true, json: async () => ({ title: 'Hurt' }) }; });
+    assert.equal(title, 'Hurt');
+    assert.match(asked, /^https:\/\/open\.spotify\.com\/oembed\?url=https%3A%2F%2Fopen\.spotify\.com%2Ftrack%2FID$/);
+    await assert.rejects(fetchSpotifyTitle('ID', async () => ({ ok: false, status: 404 })), /404/);
+});
+
+test('searchSong tries Music, then all of YouTube when nothing is usable', async () => {
+    const fetchFn = searchFetch((u) => (u.searchParams.has('videoCategoryId') ? ['long'] : ['good']));
+    const real = fetchFn;
+    const wrapped = async (url) => {
+        const res = await real(url);
+        const u = new URL(url);
+        if (u.pathname.endsWith('/videos')) {
+            const ids = u.searchParams.get('id').split(',');
+            return { ok: true, status: 200, json: async () => ({ items: ids.map(id => video(id, id === 'long' ? 'PT40M' : 'PT3M')) }) };
+        }
+        return res;
+    };
+    const { results, passes } = await createYoutubeApi(() => 'KEY', wrapped).searchSong('hurt audio');
+    assert.equal(passes, 2);
+    assert.deepEqual(results.map(r => r.track?.id ?? `x:${r.id}`), ['x:long', 'good']);
 });
 
 for (const run of pending) await run();

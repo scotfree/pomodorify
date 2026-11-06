@@ -139,3 +139,101 @@
 .track-name a:hover {
     text-decoration: underline;
 }
+
+/* --- Build from a list --- */
+
+.build-button {
+    background: linear-gradient(45deg, #8b008b, #a020a0);
+    border-color: #8b008b;
+}
+
+.build-dialog {
+    width: min(680px, calc(100vw - 2rem));
+    max-height: calc(100vh - 2rem);
+    padding: 1.5rem;
+    border: 2px solid #8b008b;
+    border-radius: 12px;
+    background: rgba(25, 25, 35, 0.97);
+    color: #e6e6fa;
+    font-family: 'Orbitron', monospace;
+    box-shadow: 0 0 30px rgba(139, 0, 139, 0.6);
+    text-align: center;
+}
+
+.build-dialog::backdrop {
+    background: rgba(10, 10, 20, 0.6);
+    backdrop-filter: blur(3px);
+}
+
+.build-dialog input {
+    max-width: none;
+}
+
+.build-dialog textarea {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 0.75rem;
+    border: 2px solid #8b008b;
+    border-radius: 8px;
+    background: rgba(25, 25, 35, 0.9);
+    color: #e6e6fa;
+    font-family: ui-monospace, Menlo, monospace;
+    font-size: 0.9rem;
+    line-height: 1.4;
+    resize: vertical;
+}
+
+.build-dialog textarea:focus {
+    outline: none;
+    box-shadow: 0 0 20px #8b008b;
+}
+
+.build-log {
+    text-align: left;
+    padding-left: 1.5rem;
+    margin: 0 0 1rem;
+    font-size: 0.85rem;
+    line-height: 1.5;
+}
+
+.build-log li {
+    margin-bottom: 0.75rem;
+}
+
+.build-log .line {
+    font-weight: 700;
+}
+
+.build-log ul {
+    list-style: none;
+    padding-left: 0.5rem;
+    margin: 0.15rem 0 0;
+}
+
+.build-log .skip,
+.build-log .muted {
+    opacity: 0.65;
+}
+
+.build-log .fail {
+    color: #ff8a80;
+}
+
+.build-log code {
+    font-family: ui-monospace, Menlo, monospace;
+    background: rgba(255, 255, 255, 0.08);
+    padding: 0 0.25rem;
+    border-radius: 4px;
+}
+
+.build-log a,
+.build-result a {
+    color: #b9f6ca;
+}
+
+.build-result {
+    padding: 0.75rem;
+    margin-bottom: 1rem;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    border-radius: 8px;
+}

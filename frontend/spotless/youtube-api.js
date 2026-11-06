@@ -12,6 +12,10 @@ const BASE = 'https://www.googleapis.com/youtube/v3';
 export const MIN_TRACK_MS = 60 * 1000;
 export const MAX_TRACK_MS = 20 * 60 * 1000;
 
+// For a single named song (Build): tighter, so a 30-minute "full album" or a
+// music video with a long intro isn't taken for the song.
+export const SONG_RANGE = { minMs: 60 * 1000, maxMs: 12 * 60 * 1000 };
+
 // "PT1H2M3S" -> ms. "P0D" (live) and anything unparseable -> 0.
 export function parseIsoDuration(iso) {
     const m = /^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?)?$/.exec(String(iso ?? ''));
@@ -20,23 +24,35 @@ export function parseIsoDuration(iso) {
     return Math.round((((+d * 24 + +h) * 60 + +min) * 60 + +s) * 1000);
 }
 
+// Why a video can't be a track, or null if it can.
+function rejection(item, durationMs, { minMs, maxMs }) {
+    const live = item.snippet?.liveBroadcastContent;
+    if (live && live !== 'none') return live === 'upcoming' ? 'upcoming premiere' : 'live stream';
+    if (item.status?.embeddable === false) return 'not embeddable';
+    if (durationMs < minMs || durationMs > maxMs) return `${formatMinutes(durationMs)}, outside ${formatMinutes(minMs)}–${formatMinutes(maxMs)}`;
+    return null;
+}
+
+function formatMinutes(ms) {
+    const s = Math.round(ms / 1000);
+    return s < 3600 ? `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}` : `${(s / 3600).toFixed(1)} h`;
+}
+
+// videos.list items -> [{ track } | { id, name, reason }], in the API's order.
+export function classifyVideos(items, { minMs = MIN_TRACK_MS, maxMs = MAX_TRACK_MS } = {}) {
+    return (items ?? []).map((item) => {
+        const duration_ms = parseIsoDuration(item.contentDetails?.duration);
+        const name = item.snippet?.title ?? item.id;
+        const reason = rejection(item, duration_ms, { minMs, maxMs });
+        if (reason) return { id: item.id, name, reason };
+        return { track: { id: item.id, name, artist: item.snippet?.channelTitle ?? '', duration_ms } };
+    });
+}
+
 // videos.list items -> tracks, dropping live streams, unembeddable videos and
 // anything outside the duration range. Keeps the API's order.
-export function videosToTracks(items, { minMs = MIN_TRACK_MS, maxMs = MAX_TRACK_MS } = {}) {
-    const tracks = [];
-    for (const item of items ?? []) {
-        if (item.snippet?.liveBroadcastContent && item.snippet.liveBroadcastContent !== 'none') continue;
-        if (item.status?.embeddable === false) continue;
-        const duration_ms = parseIsoDuration(item.contentDetails?.duration);
-        if (duration_ms < minMs || duration_ms > maxMs) continue;
-        tracks.push({
-            id: item.id,
-            name: item.snippet?.title ?? item.id,
-            artist: item.snippet?.channelTitle ?? '',
-            duration_ms,
-        });
-    }
-    return tracks;
+export function videosToTracks(items, range) {
+    return classifyVideos(items, range).filter(r => r.track).map(r => r.track);
 }
 
 // getKey: () => API key. fetchFn is injectable for tests.
@@ -60,12 +76,12 @@ export function createYoutubeApi(getKey, fetchFn = (...args) => fetch(...args)) 
 
     // videoDuration: 'medium' is 4-20 min, 'short' under 4 min. Without it,
     // popular searches ("lofi beats") are mostly hours-long mixes and streams.
-    async function searchIds(query, { categoryId, videoDuration } = {}) {
+    async function searchIds(query, { categoryId, videoDuration, maxResults = 50 } = {}) {
         const body = await get('search', {
             part: 'id',
             type: 'video',
             q: query,
-            maxResults: 50,
+            maxResults,
             videoEmbeddable: 'true',
             videoSyndicated: 'true',  // playable outside youtube.com
             videoCategoryId: categoryId,
@@ -101,6 +117,22 @@ export function createYoutubeApi(getKey, fetchFn = (...args) => fetch(...args)) 
                 if (tracks.length >= enough) break;
             }
             return tracks;
+        },
+
+        // One song: the Music category, then all of YouTube if nothing there
+        // is usable. Returns { results: classifyVideos output, passes } so the
+        // build log can say what was rejected and why. 101 units, or 202.
+        async searchSong(query, { range = SONG_RANGE, maxResults = 25 } = {}) {
+            const results = [];
+            let passes = 0;
+            for (const categoryId of ['10', undefined]) {
+                passes++;
+                const ids = await searchIds(query, { categoryId, maxResults });
+                const seen = new Set(results.map(r => r.track?.id ?? r.id));
+                results.push(...classifyVideos(await videos(ids.filter(id => !seen.has(id))), range));
+                if (results.some(r => r.track)) break;
+            }
+            return { results, passes };
         },
     };
 }

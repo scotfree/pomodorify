@@ -35,7 +35,10 @@
                 <label for="duration">Duration (minutes):</label>
                 <input type="number" id="duration" value="25" min="1" max="120">
             </div>
-            <button id="generate-button">Generate Playlist</button>
+            <div class="button-group">
+                <button id="generate-button">Generate Playlist</button>
+                <button id="build-open-button" class="build-button">Build from a list</button>
+            </div>
 
             <div class="form-group replay" id="replay-group" hidden>
                 <label for="replay-select">Your playlists:</label>
@@ -195,6 +198,34 @@
              Parked off-screen except during a session. -->
         <div id="player-wrap" class="parked"><div id="player"></div></div>
     </div>
+    <dialog id="build-dialog" class="build-dialog">
+        <h2>Build from a list</h2>
+        <div id="build-input">
+            <div class="form-group">
+                <label for="build-title">Title:</label>
+                <input type="text" id="build-title">
+            </div>
+            <div class="form-group">
+                <label for="build-lines">Songs, one per line. Adding the artist helps; Spotify track links work too.</label>
+                <textarea id="build-lines" rows="12" spellcheck="false"
+                    placeholder="Johnny Cash - Hurt&#10;Nina Simone - Feeling Good&#10;https://open.spotify.com/track/…"></textarea>
+            </div>
+            <p class="note" id="build-duration-note"></p>
+            <div class="button-group">
+                <button id="build-cancel-button" class="back-button">CANCEL</button>
+                <button id="build-create-button">CREATE!</button>
+            </div>
+        </div>
+        <div id="build-output" hidden>
+            <p class="note" id="build-status"></p>
+            <ol class="build-log" id="build-log"></ol>
+            <div class="build-result" id="build-result" hidden></div>
+            <div class="button-group">
+                <button id="build-close-button" class="back-button">CLOSE</button>
+                <button id="build-show-button" hidden>OPEN PLAYLIST</button>
+            </div>
+        </div>
+    </dialog>
     <script type="module" src="spotless.js"></script>
 </body>
 </html>

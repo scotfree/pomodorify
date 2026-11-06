@@ -83,7 +83,7 @@ npm run deploy   # cdk deploy --profile personal
 ### Spotless app (`frontend/spotless/`)
 
 - `spotless.js`: the UI, adapted from `track/track.js`. Sections `key`, `playlist`, `preview`, `session`. The YouTube player (`#player-wrap`) sits outside the sections, parked off-screen except during a session: its iframe must be laid out to load, mustn't be moved (that reloads it), and must be visible (≥200×200) while playing.
-- `youtube-api.js`: `search.list` (Music category, then all categories if that finds fewer than 5) + `videos.list` for durations. Drops live, unembeddable, <1 min and >20 min videos. About 101 quota units per search (10k/day default).
+- `youtube-api.js`: `search.list` + `videos.list` for durations. Search passes stop once there are 15 tracks: 4–20 min Music (`videoDuration=medium`), then short Music, then 4–20 min of any category. Without the duration filter, popular searches are mostly hours-long mixes and streams. Drops live, unembeddable, <1 min and >20 min videos. 101 quota units per search when the first pass is enough, up to 303 (10k/day default).
 - `playlists.js`: the `spotless_playlists` store (newest first), export/import. `settings.js`: the API key.
 - `playback/youtube.js`: the adapter. It steps through the list itself with `loadVideoById` so a video that won't play (errors 100/101/150) is skipped instead of stopping the session.
 

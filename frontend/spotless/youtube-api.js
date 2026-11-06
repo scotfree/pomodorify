@@ -2,7 +2,8 @@
 // ({ id, name, artist, duration_ms }) that selectTracksForDuration can fit.
 //
 // Quota: search.list costs 100 units and videos.list 1, against a default of
-// 10,000 units a day per key, so one search here is about 101 units.
+// 10,000 units a day per key. A search here is 101 units when the first pass
+// finds enough, up to 303 when it falls back.
 
 const BASE = 'https://www.googleapis.com/youtube/v3';
 
@@ -57,7 +58,9 @@ export function createYoutubeApi(getKey, fetchFn = (...args) => fetch(...args)) 
         return body;
     }
 
-    async function searchIds(query, categoryId) {
+    // videoDuration: 'medium' is 4-20 min, 'short' under 4 min. Without it,
+    // popular searches ("lofi beats") are mostly hours-long mixes and streams.
+    async function searchIds(query, { categoryId, videoDuration } = {}) {
         const body = await get('search', {
             part: 'id',
             type: 'video',
@@ -66,6 +69,7 @@ export function createYoutubeApi(getKey, fetchFn = (...args) => fetch(...args)) 
             videoEmbeddable: 'true',
             videoSyndicated: 'true',  // playable outside youtube.com
             videoCategoryId: categoryId,
+            videoDuration,
         });
         return (body.items ?? []).map(i => i.id?.videoId).filter(Boolean);
     }
@@ -77,14 +81,24 @@ export function createYoutubeApi(getKey, fetchFn = (...args) => fetch(...args)) 
     }
 
     return {
-        // Searches the Music category first; if that finds almost nothing
-        // (e.g. "rain sounds" lives elsewhere), searches everything.
-        async searchTracks(query) {
-            let tracks = videosToTracks(await videos(await searchIds(query, '10')));
-            if (tracks.length < 5) {
-                const more = videosToTracks(await videos(await searchIds(query)));
-                const seen = new Set(tracks.map(t => t.id));
-                tracks = [...tracks, ...more.filter(t => !seen.has(t.id))];
+        // Passes, stopping once there are enough tracks: 4-20 min music, then
+        // short music (most songs are 2-4 min), then 4-20 min of anything
+        // (e.g. "rain sounds" isn't in the Music category).
+        async searchTracks(query, { enough = 15 } = {}) {
+            const passes = [
+                { categoryId: '10', videoDuration: 'medium' },
+                { categoryId: '10', videoDuration: 'short' },
+                { videoDuration: 'medium' },
+            ];
+            const tracks = [];
+            const seen = new Set();
+            for (const pass of passes) {
+                const ids = (await searchIds(query, pass)).filter(id => !seen.has(id));
+                for (const t of videosToTracks(await videos(ids))) {
+                    seen.add(t.id);
+                    tracks.push(t);
+                }
+                if (tracks.length >= enough) break;
             }
             return tracks;
         },

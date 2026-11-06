@@ -102,34 +102,40 @@ function fakeFetch(handler) {
     return fn;
 }
 
-test('search sends the key, embeddable filters and the Music category, then fetches durations', async () => {
-    const fetchFn = fakeFetch((u) => u.pathname.endsWith('/search')
-        ? { body: { items: ['a', 'b', 'c', 'd', 'e'].map(id => ({ id: { videoId: id } })) } }
+function searchFetch(idsFor) {
+    return fakeFetch((u) => u.pathname.endsWith('/search')
+        ? { body: { items: idsFor(u).map(id => ({ id: { videoId: id } })) } }
         : { body: { items: u.searchParams.get('id').split(',').map(id => video(id, 'PT3M')) } });
-    const api = createYoutubeApi(() => 'KEY', fetchFn);
-    const tracks = await api.searchTracks('lofi beats');
-    assert.equal(tracks.length, 5);
+}
+
+const idList = (prefix, n) => Array.from({ length: n }, (_, i) => `${prefix}${i}`);
+
+test('first pass: 4-20 min Music videos with the key and embeddable filters; stops when enough', async () => {
+    const fetchFn = searchFetch(() => idList('a', 20));
+    const tracks = await createYoutubeApi(() => 'KEY', fetchFn).searchTracks('lofi beats');
+    assert.equal(tracks.length, 20);
     const search = fetchFn.calls[0];
     assert.equal(search.searchParams.get('key'), 'KEY');
     assert.equal(search.searchParams.get('q'), 'lofi beats');
     assert.equal(search.searchParams.get('type'), 'video');
     assert.equal(search.searchParams.get('videoEmbeddable'), 'true');
     assert.equal(search.searchParams.get('videoCategoryId'), '10');
-    assert.equal(fetchFn.calls[1].searchParams.get('id'), 'a,b,c,d,e');
-    assert.equal(fetchFn.calls.length, 2);
+    assert.equal(search.searchParams.get('videoDuration'), 'medium');
+    assert.equal(fetchFn.calls[1].searchParams.get('id'), idList('a', 20).join(','));
+    assert.equal(fetchFn.calls.length, 2);  // 101 quota units
 });
 
-test('few Music results: searches all categories too, without duplicates', async () => {
-    const fetchFn = fakeFetch((u) => {
-        if (u.pathname.endsWith('/search')) {
-            const ids = u.searchParams.has('videoCategoryId') ? ['a'] : ['a', 'b', 'c'];
-            return { body: { items: ids.map(id => ({ id: { videoId: id } })) } };
-        }
-        return { body: { items: u.searchParams.get('id').split(',').map(id => video(id, 'PT3M')) } };
+test('too few: adds short Music, then medium of any category, without duplicates', async () => {
+    const fetchFn = searchFetch((u) => {
+        const p = u.searchParams;
+        if (p.get('videoDuration') === 'short') return ['b', 'a0'];
+        return p.has('videoCategoryId') ? ['a0'] : ['c', 'b'];
     });
     const tracks = await createYoutubeApi(() => 'KEY', fetchFn).searchTracks('rain sounds');
-    assert.deepEqual(tracks.map(t => t.id), ['a', 'b', 'c']);
-    assert.equal(fetchFn.calls[2].searchParams.has('videoCategoryId'), false);
+    assert.deepEqual(tracks.map(t => t.id), ['a0', 'b', 'c']);
+    const searches = fetchFn.calls.filter(u => u.pathname.endsWith('/search')).map(u => u.searchParams);
+    assert.deepEqual(searches.map(p => [p.get('videoCategoryId'), p.get('videoDuration')]),
+        [['10', 'medium'], ['10', 'short'], [null, 'medium']]);
 });
 
 test('API errors surface the message and reason', async () => {

@@ -1,0 +1,47 @@
+/* Track app additions on top of ../style.css. */
+
+#start-button {
+    background: #1db954;
+}
+
+#start-button:hover:not(:disabled) {
+    background: #1ed760;
+}
+
+.note {
+    font-size: 0.9rem;
+    opacity: 0.8;
+}
+
+.export {
+    margin-top: 1.5rem;
+    text-align: left;
+}
+
+.export summary {
+    cursor: pointer;
+    opacity: 0.8;
+    margin-bottom: 0.75rem;
+}
+
+.session-clock {
+    font-size: 4rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    margin: 1rem 0;
+}
+
+.session-now {
+    margin-bottom: 0.5rem;
+}
+
+.session-progress {
+    opacity: 0.8;
+    font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 768px) {
+    .session-clock {
+        font-size: 3rem;
+    }
+}

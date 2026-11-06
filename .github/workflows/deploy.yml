@@ -22,7 +22,9 @@ jobs:
           node-version: '20'
 
       - name: Run tests
-        run: node tests/test.mjs
+        run: |
+          node tests/test.mjs
+          node tests/track.test.mjs
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4

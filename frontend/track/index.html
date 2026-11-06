@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pomodorify Track</title>
+    <link rel="icon" type="image/png" href="../pomodorify_icon.png">
+    <link rel="stylesheet" href="../style.css">
+    <link rel="stylesheet" href="track.css">
+</head>
+<body>
+    <div id="bg"></div>
+    <div class="container">
+        <h1>Pomodorify</h1>
+
+        <div id="login-section">
+            <p id="login-note" hidden>Tracked sessions need playback permission. Please log in again.</p>
+            <button id="login-button">Log in with Spotify</button>
+        </div>
+
+        <div id="playlist-section" style="display: none;">
+            <h2>Build a session playlist.</h2>
+            <div class="playlist-selection-frame">
+                <select id="playlist-select"><option value="">Loading playlists...</option></select>
+            </div>
+            <div class="search-row">
+                <div class="search-input-frame">
+                    <input type="text" id="search-input" placeholder="or use a search...">
+                </div>
+            </div>
+            <div class="form-group">
+                <label for="duration">Duration (minutes):</label>
+                <input type="number" id="duration" value="25" min="1" max="120">
+            </div>
+            <button id="generate-button">Generate Playlist</button>
+            <div style="margin-top: 1rem;">
+                <button id="logout-button">Logout</button>
+            </div>
+        </div>
+
+        <div id="preview-section" style="display: none;">
+            <h2>Preview Playlist</h2>
+            <div class="playlist-info">
+                <p>Source: <span id="preview-source-name"></span></p>
+                <p>Duration: <span id="preview-duration"></span></p>
+                <p>Number of tracks: <span id="preview-track-count"></span></p>
+            </div>
+            <div class="track-list" id="preview-tracks"></div>
+
+            <div class="form-group">
+                <label for="project-input">Project (optional, for logging time):</label>
+                <input type="text" id="project-input" list="project-list" placeholder="No project: time isn't logged">
+                <datalist id="project-list"></datalist>
+            </div>
+            <p id="premium-note" class="note" hidden>Tracked sessions need Spotify Premium.</p>
+
+            <div class="button-group">
+                <button id="back-button" class="back-button">BACK</button>
+                <button id="regenerate-button">REBUILD</button>
+                <button id="start-button" disabled>START SESSION</button>
+            </div>
+
+            <details class="export">
+                <summary>Or save it to Spotify instead (no time tracking)</summary>
+                <div class="form-group">
+                    <label for="preview-playlist-name">Playlist name:</label>
+                    <input type="text" id="preview-playlist-name">
+                </div>
+                <button id="save-button">SAVE</button>
+            </details>
+        </div>
+
+        <div id="session-section" style="display: none;">
+            <h2 id="session-project"></h2>
+            <div class="session-clock" id="session-elapsed">0:00</div>
+            <div class="session-now">
+                <div class="track-name" id="session-track-name">Starting…</div>
+                <div class="track-artist" id="session-track-artist"></div>
+            </div>
+            <p class="session-progress" id="session-progress"></p>
+            <div class="button-group" id="session-controls">
+                <button id="pause-button">PAUSE</button>
+                <button id="stop-button" class="back-button">STOP</button>
+            </div>
+            <div id="session-done" hidden>
+                <p id="session-summary"></p>
+                <button id="new-session-button">New Session</button>
+            </div>
+        </div>
+
+        <div id="result-section" style="display: none;">
+            <h2>Playlist Created!</h2>
+            <p>Your new playlist has been created successfully.</p>
+            <a id="playlist-link" href="#" target="_blank">Open in Spotify</a>
+            <button id="create-another-button">Create Another Playlist</button>
+        </div>
+    </div>
+    <script type="module" src="track.js"></script>
+</body>
+</html>

@@ -23,6 +23,7 @@ import { createYoutubeApi } from './youtube-api.js';
 import { createPlaylistStore } from './playlists.js';
 import { createYoutubePlayback } from './playback/youtube.js';
 import { buildPlaylist, parseLines, cachedSearch, fetchSpotifyTitle } from './build.js';
+import { parseLabels, fetchIssueLabels, formatLabelCounts } from './labels.js';
 
 const BACKGROUNDS = [
     '../assets/tta_icetroid.jpg',
@@ -64,6 +65,11 @@ let sessionTracks = [];
 let current = { index: -1, startedAtMs: 0 };  // track position, in session-clock time
 let playing = false;
 let ticker = null;
+
+// Labels: an issue's labels, fetched when it's chosen, and the session's.
+const issueLabels = new Map();  // issue id -> label names
+let sessionPlaylistId = null;
+let sessionLabels = null;       // names, or a promise while an issue's are loading
 
 // --- sections ---
 
@@ -233,11 +239,19 @@ function renderPreview() {
     // REBUILD would only reshuffle a fixed playlist.
     $('regenerate-button').hidden = Boolean(preview.savedId);
     $('delete-button').hidden = !preview.savedId;
+    renderPreviewLabels();
     setNote('save-note', preview.savedId ? 'Saved in this browser.' : 'Not saved yet. Starting a session saves it.');
     $('project-list').replaceChildren(...Object.keys(logger.getTotals()).sort().map(p => new Option(p)));
 }
 
 // --- saved playlists ---
+
+function renderPreviewLabels() {
+    const counts = preview.savedId ? playlists.get(preview.savedId)?.labels : null;
+    const text = formatLabelCounts(counts);
+    $('preview-labels-list').textContent = text;
+    $('preview-labels').hidden = !text;
+}
 
 // Saves a new playlist, or renames a saved one. Synchronous (localStorage), so
 // startSession can call it without awaiting before playback.
@@ -526,6 +540,7 @@ async function onProjectChange() {
     const choice = parseProjectChoice(value);
     const usesIssues = choice.kind !== 'none';
     $('title-group').hidden = usesIssues;
+    $('labels-group').hidden = usesIssues;
     $('issue-group').hidden = !usesIssues;
     $('new-issue-form').hidden = true;
     setNote('issue-note', '');
@@ -577,12 +592,19 @@ async function onIssueChange() {
     if (!issue) return;
     setNote('issue-note', 'Checking hours fields…');
     try {
-        const target = await githubLogger.prepare(issue.id);
-        if ($('issue-select').value === issue.id) setNote('issue-note', describeTarget(target));
+        const [target, labels] = await Promise.all([githubLogger.prepare(issue.id), labelsForIssue(issue.id)]);
+        const labelText = labels.length ? ` Labels: ${labels.join(', ')}.` : ' No labels.';
+        if ($('issue-select').value === issue.id) setNote('issue-note', describeTarget(target) + labelText);
     } catch (error) {
         console.error(error);
         setNote('issue-note', `Couldn't read the issue: ${error.message}`);
     }
+}
+
+// Cached per issue for the page's lifetime.
+async function labelsForIssue(issueId) {
+    if (!issueLabels.has(issueId)) issueLabels.set(issueId, await fetchIssueLabels(githubApi, issueId));
+    return issueLabels.get(issueId);
 }
 
 function showNewIssueForm() {
@@ -741,6 +763,10 @@ function startSession() {
     if (!preview.savedId) savePreview();  // sync, so nothing is awaited before play()
     session = createSession({ project: target.label, logger: sessionLogger(target.issue) });
     sessionLabel = target.label;
+    sessionPlaylistId = preview.savedId;
+    sessionLabels = target.issue
+        ? (issueLabels.get(target.issue.id) ?? null)  // fetched below if not loaded yet
+        : parseLabels($('labels-input').value);
     sessionTracks = preview.tracks;
     current = { index: -1, startedAtMs: 0 };
     playing = false;
@@ -762,6 +788,35 @@ function startSession() {
     });
     // After play(), so nothing is awaited before it. Readies a one-write log for pagehide.
     if (target.issue) githubLogger.prepare(target.issue.id).catch(console.error);
+    if (sessionLabels === null) {
+        sessionLabels = labelsForIssue(target.issue.id).catch((error) => {
+            console.error(error);
+            return [];
+        });
+    }
+}
+
+// Counts the session's labels against its playlist, if anything played.
+// Synchronous when the labels are already known, so it works on pagehide.
+function recordSessionLabels() {
+    const playlistId = sessionPlaylistId;
+    const labels = sessionLabels;
+    sessionPlaylistId = null;
+    if (!playlistId || !(session.elapsedMs() > 0)) return;
+    const record = (names) => {
+        if (names.length === 0) return;
+        playlists.addLabels(playlistId, names);
+        $('session-labels').textContent = `Playlist labels +1: ${names.join(', ')}`;
+        $('session-labels').hidden = false;
+    };
+    if (Array.isArray(labels)) record(labels);
+    else labels?.then(record);
+}
+
+function finishSession() {
+    const hours = session.finish();
+    recordSessionLabels();
+    return hours;
 }
 
 function onPlaybackChange(change) {
@@ -799,7 +854,8 @@ function endSession() {
     if (!session || session.isFinished()) return;
     renderSession();
     const project = sessionLabel;
-    const hours = session.finish();
+    $('session-labels').hidden = true;
+    const hours = finishSession();
     clearInterval(ticker);
     ticker = null;
 
@@ -880,7 +936,7 @@ function wireEvents() {
     // Closing the tab mid-session still logs the time played so far.
     window.addEventListener('pagehide', () => {
         pageHiding = true;
-        if (session && !session.isFinished()) session.finish();
+        if (session && !session.isFinished()) finishSession();
     });
     $('project-select').addEventListener('change', onProjectChange);
     $('issue-select').addEventListener('change', onIssueChange);

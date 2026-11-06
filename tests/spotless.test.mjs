@@ -8,6 +8,9 @@ import {
     buildPlaylist, parseLines, songQuery, spotifyTrackId, shuffle, cachedSearch, fetchSpotifyTitle,
     FILLER_QUERY, CACHE_KEY,
 } from '../frontend/spotless/build.js';
+import {
+    parseLabels, normalizeLabels, addLabelCounts, sortedLabels, formatLabelCounts, fetchIssueLabels,
+} from '../frontend/spotless/labels.js';
 
 let passed = 0;
 let failed = 0;
@@ -586,6 +589,64 @@ test('searchSong tries Music, then all of YouTube when nothing is usable', async
     const { results, passes } = await createYoutubeApi(() => 'KEY', wrapped).searchSong('hurt audio');
     assert.equal(passes, 2);
     assert.deepEqual(results.map(r => r.track?.id ?? `x:${r.id}`), ['x:long', 'good']);
+});
+
+// --- labels ---
+section('labels');
+
+test('parseLabels splits on commas, trims, drops blanks and repeats in any case', () => {
+    assert.deepEqual(parseLabels(' writing, Planning ,, planning,  deep   work '), ['writing', 'Planning', 'deep work']);
+    assert.deepEqual(parseLabels(''), []);
+});
+
+test("Pomodorify's own label is ignored", () => {
+    assert.deepEqual(normalizeLabels(['bug', 'Pomodorify Created']), ['bug']);
+});
+
+test('addLabelCounts adds new labels and increments existing ones (any case)', () => {
+    let counts = addLabelCounts(undefined, ['bug', 'ui']);
+    counts = addLabelCounts(counts, ['Bug', 'docs']);
+    assert.deepEqual(counts, { bug: 2, ui: 1, docs: 1 });
+});
+
+test('a label repeated in one session counts once', () => {
+    assert.deepEqual(addLabelCounts({}, ['bug', 'BUG']), { bug: 1 });
+});
+
+test('addLabelCounts does not change its input', () => {
+    const counts = { bug: 1 };
+    addLabelCounts(counts, ['bug']);
+    assert.deepEqual(counts, { bug: 1 });
+});
+
+test('sorted most used first, then by name', () => {
+    assert.deepEqual(sortedLabels({ ui: 1, bug: 3, Alpha: 1 }).map(([n]) => n), ['bug', 'Alpha', 'ui']);
+    assert.equal(formatLabelCounts({ ui: 1, bug: 3 }), 'bug ×3, ui ×1');
+    assert.equal(formatLabelCounts(undefined), '');
+});
+
+test('fetchIssueLabels reads label names through the GitHub api object', async () => {
+    let asked = null;
+    const api = { graphql: async (query, vars) => {
+        asked = { query, vars };
+        return { node: { labels: { nodes: [{ name: 'bug' }, { name: 'pomodorify created' }, { name: 'ui' }] } } };
+    } };
+    assert.deepEqual(await fetchIssueLabels(api, 'I_1'), ['bug', 'ui']);
+    assert.deepEqual(asked.vars, { id: 'I_1' });
+    assert.match(asked.query, /labels\(first: 50\)/);
+});
+
+test('playlist store counts labels per playlist, and they survive export/import', () => {
+    const s = store();
+    const a = s.save({ name: 'A', tracks: TRACKS });
+    const b = s.save({ name: 'B', tracks: TRACKS });
+    s.addLabels(a.id, ['bug', 'ui']);
+    assert.deepEqual(s.addLabels(a.id, ['bug']), { bug: 2, ui: 1 });
+    assert.deepEqual(s.get(a.id).labels, { bug: 2, ui: 1 });
+    assert.equal(s.get(b.id).labels, undefined);
+    const other = store();
+    other.importJson(s.exportJson());
+    assert.deepEqual(other.get(a.id).labels, { bug: 2, ui: 1 });
 });
 
 for (const run of pending) await run();

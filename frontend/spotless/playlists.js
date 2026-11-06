@@ -1,5 +1,8 @@
 // Spotless playlists, kept in browser storage as JSON. Nothing is written to
-// YouTube: a playlist is a name plus an ordered list of tracks.
+// YouTube: a playlist is a name plus an ordered list of tracks, and optional
+// `labels` counts ({ label: sessions }, see labels.js).
+
+import { addLabelCounts } from './labels.js';
 
 export const PLAYLISTS_KEY = 'spotless_playlists';
 export const EXPORT_VERSION = 1;
@@ -62,6 +65,17 @@ export function createPlaylistStore({
             const trimmed = String(name ?? '').trim();
             if (!trimmed) return;
             write(read().map(p => (p.id === id ? { ...p, name: trimmed } : p)));
+        },
+
+        // Counts one session's labels against the playlist. Returns the new counts.
+        addLabels(id, names) {
+            let counts = null;
+            write(read().map((p) => {
+                if (p.id !== id) return p;
+                counts = addLabelCounts(p.labels, names);
+                return { ...p, labels: counts };
+            }));
+            return counts;
         },
 
         remove(id) {

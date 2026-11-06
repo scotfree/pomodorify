@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { createLocalLogger } from '../frontend/track/loggers/local.js';
-import { createSessionClock, createSession } from '../frontend/track/session.js';
+import { createSessionClock, createSession, formatClock, remainingMs } from '../frontend/track/session.js';
+import { createAuth, hasScopes, SCOPES, STORAGE_KEYS } from '../frontend/track/auth.js';
 import { currentTrackUri, initialTracker, nextTrackerState } from '../frontend/track/playback/spotify-state.js';
 import { createSpotifyPlayback } from '../frontend/track/playback/spotify.js';
 
@@ -434,6 +435,140 @@ await testAsync('stop pauses and ignores later states', async () => {
     sdk.player().fire('player_state_changed', state(false, 5000, 'Big Mon'));
     assert.equal(changes.length, 1);
     assert.equal(sdk.calls.at(-1), 'pause');
+});
+
+// --- session display helpers ---
+console.log('\nsession display');
+
+test('formatClock under an hour', () => {
+    assert.equal(formatClock(0), '0:00');
+    assert.equal(formatClock(65000), '1:05');
+    assert.equal(formatClock(59 * 60000 + 59999), '59:59');
+});
+
+test('formatClock from an hour on', () => {
+    assert.equal(formatClock(3600000), '1:00:00');
+    assert.equal(formatClock(2 * 3600000 + 5 * 60000 + 7000), '2:05:07');
+});
+
+test('remainingMs: rest of current track plus later tracks', () => {
+    const tracks = [{ duration_ms: 1000 }, { duration_ms: 2000 }, { duration_ms: 3000 }];
+    assert.equal(remainingMs(tracks, 0, 0), 6000);
+    assert.equal(remainingMs(tracks, 1, 500), 1500 + 3000);
+    assert.equal(remainingMs(tracks, 2, 3000), 0);
+});
+
+test('remainingMs never counts negative time in the current track', () => {
+    const tracks = [{ duration_ms: 1000 }, { duration_ms: 2000 }];
+    assert.equal(remainingMs(tracks, 0, 5000), 2000);
+});
+
+test('remainingMs with no current track is 0', () => {
+    assert.equal(remainingMs([{ duration_ms: 1000 }], -1, 0), 0);
+});
+
+// --- auth ---
+console.log('\nauth');
+
+test('hasScopes requires every scope', () => {
+    assert.equal(hasScopes(SCOPES.join(' ')), true);
+    assert.equal(hasScopes(SCOPES.filter(s => s !== 'streaming').join(' ')), false);
+    assert.equal(hasScopes(null), false);
+});
+
+test('hasScopes ignores order and extra scopes', () => {
+    assert.equal(hasScopes(['ugc-image-upload', ...[...SCOPES].reverse()].join('  ')), true);
+});
+
+// Fake token endpoint that records requests and returns `reply`.
+function fakeTokenFetch(reply) {
+    const requests = [];
+    const fn = async (url, opts) => {
+        requests.push(Object.fromEntries(opts.body));
+        return { ok: true, status: 200, json: async () => reply };
+    };
+    fn.requests = requests;
+    return fn;
+}
+
+function authWith({ storage = fakeStorage(), fetchFn = fakeTokenFetch({}), now = fakeNow(1_000_000) } = {}) {
+    return { auth: createAuth({ clientId: 'cid', redirectUri: 'http://x/track/index.html', storage, fetchFn, now }), storage, fetchFn, now };
+}
+
+await testAsync('callback stores tokens under track_ keys only, plus the granted scope', async () => {
+    const fetchFn = fakeTokenFetch({ access_token: 'A', refresh_token: 'R', expires_in: 3600, scope: SCOPES.join(' ') });
+    const { auth, storage } = authWith({ fetchFn });
+    storage.setItem(STORAGE_KEYS.verifier, 'v');
+    assert.equal(await auth.handleCallback('?code=abc'), true);
+    assert.equal(fetchFn.requests[0].code_verifier, 'v');
+    assert.equal(fetchFn.requests[0].redirect_uri, 'http://x/track/index.html');
+    assert.ok(Object.keys(storage.data).every(k => k.startsWith('track_')));
+    assert.equal(storage.getItem(STORAGE_KEYS.verifier), null);
+    assert.equal(auth.isLoggedIn(), true);
+});
+
+await testAsync('no code in the URL is not a callback', async () => {
+    const { auth, fetchFn } = authWith();
+    assert.equal(await auth.handleCallback(''), false);
+    assert.equal(fetchFn.requests.length, 0);
+});
+
+test('a token without the streaming scope is not logged in (spike-era token)', () => {
+    const { auth, storage } = authWith();
+    storage.setItem(STORAGE_KEYS.access, 'A');
+    assert.equal(auth.isLoggedIn(), false);
+    storage.setItem(STORAGE_KEYS.scope, 'user-read-private playlist-read-private');
+    assert.equal(auth.isLoggedIn(), false);
+});
+
+test('does not see the root app session', () => {
+    const { auth, storage } = authWith();
+    storage.setItem('spotify_access_token', 'ROOT');
+    assert.equal(auth.isLoggedIn(), false);
+});
+
+await testAsync('getToken returns the stored token when not near expiry', async () => {
+    const { auth, storage, fetchFn, now } = authWith();
+    storage.setItem(STORAGE_KEYS.access, 'A');
+    storage.setItem(STORAGE_KEYS.expiry, String(now() + 3600000));
+    assert.equal(await auth.getToken(), 'A');
+    assert.equal(fetchFn.requests.length, 0);
+});
+
+await testAsync('getToken refreshes within 5 minutes of expiry, keeping the old refresh token', async () => {
+    const fetchFn = fakeTokenFetch({ access_token: 'B', expires_in: 3600, scope: SCOPES.join(' ') });
+    const { auth, storage, now } = authWith({ fetchFn });
+    storage.setItem(STORAGE_KEYS.access, 'A');
+    storage.setItem(STORAGE_KEYS.refresh, 'R');
+    storage.setItem(STORAGE_KEYS.expiry, String(now() + 60000));
+    assert.equal(await auth.getToken(), 'B');
+    assert.equal(fetchFn.requests[0].grant_type, 'refresh_token');
+    assert.equal(fetchFn.requests[0].refresh_token, 'R');
+    assert.equal(storage.getItem(STORAGE_KEYS.refresh), 'R');
+});
+
+await testAsync('getToken returns null when the refresh fails', async () => {
+    const fetchFn = async () => ({ ok: false, status: 400 });
+    const { auth, storage } = authWith({ fetchFn });
+    storage.setItem(STORAGE_KEYS.access, 'A');
+    storage.setItem(STORAGE_KEYS.refresh, 'R');
+    storage.setItem(STORAGE_KEYS.expiry, '0');
+    const originalError = console.error;
+    console.error = () => {};
+    try {
+        assert.equal(await auth.getToken(), null);
+    } finally {
+        console.error = originalError;
+    }
+});
+
+test('logout removes only track_ keys', () => {
+    const { auth, storage } = authWith();
+    storage.setItem('spotify_access_token', 'ROOT');
+    storage.setItem('pomodorify_hours', '{}');
+    for (const k of Object.values(STORAGE_KEYS)) storage.setItem(k, 'x');
+    auth.logout();
+    assert.deepEqual(Object.keys(storage.data).sort(), ['pomodorify_hours', 'spotify_access_token']);
 });
 
 // --- Summary ---

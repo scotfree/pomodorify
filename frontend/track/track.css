@@ -1,5 +1,11 @@
 /* Track app additions on top of ../style.css. */
 
+/* style.css sets `display` on some classes (e.g. .button-group: flex), which
+   would otherwise override the `hidden` attribute. */
+[hidden] {
+    display: none !important;
+}
+
 #start-button {
     background: #1db954;
 }
@@ -38,6 +44,33 @@
 .session-progress {
     opacity: 0.8;
     font-variant-numeric: tabular-nums;
+}
+
+.replay {
+    margin-top: 1.5rem;
+}
+
+.totals {
+    margin-top: 1.5rem;
+}
+
+.totals table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 0.75rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.totals th,
+.totals td {
+    text-align: left;
+    padding: 0.35rem 0.5rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.totals th:last-child,
+.totals td:last-child {
+    text-align: right;
 }
 
 @media (max-width: 768px) {

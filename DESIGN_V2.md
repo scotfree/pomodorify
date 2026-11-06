@@ -70,7 +70,7 @@ The session core only talks to these two interfaces.
 
 The scope is Spotify only, a single user, no backend, and nothing new in AWS.
 
-**Status (2026-11-06):** steps 1–3 are built (PR A). Steps 4–5 are next (PR B).
+**Status (2026-11-06):** v1 is complete. Steps 1–3 shipped in PR A (#8), steps 4–5 in PR B.
 
 ### Where it lives: a separate app at `/track`
 
@@ -154,8 +154,10 @@ doesn't use it and keeping it unprefixed survives a later replacement.
 - On the playlist screen, add a small table of project → hours (2 decimals), plus
   three buttons:
   - **Export JSON**, which downloads the totals object as `pomodorify-hours.json`.
-  - **Export CSV**, which downloads `project,hours` rows for Excel.
-  - **Clear**, which shows a `confirm()` and then calls `logger.clear()`.
+  - **Export CSV**, which downloads `project,hours` rows for Excel. Hours are rounded to 2
+    decimals, while JSON keeps full precision so it works as a backup.
+  - **Clear**, which shows a `confirm()` stating what will be deleted ("Delete 12.40 h
+    across 3 projects?") and then calls `logger.clear()`.
 - Downloads use a `Blob` and a temporary `<a download>`. No server is needed.
 
 ### 5. Replay a saved playlist
@@ -165,6 +167,11 @@ doesn't use it and keeping it unprefixed survives a later replacement.
 - Add a "Replay a saved session" dropdown. Choosing one loads its tracks **in order**, with
   no shuffle and no duration fitting, then goes to preview → Start session. This keeps the
   "same playlist, you know where you are" benefit.
+- The replay preview hides REBUILD, which would only reshuffle a fixed playlist, and SAVE,
+  which would copy a saved one.
+- **Order:** random the first time, then stable. The order is stored as
+  `track_replay_order`. Deleted playlists drop out, and new ones are inserted at random
+  positions. Starting from an empty stored order, that's the same as a shuffle.
 
 ### 6. Tests
 
@@ -173,8 +180,8 @@ doesn't use it and keeping it unprefixed survives a later replacement.
 - Covered: the local logger, the session clock and `finish()`-once, time left and clock
   formatting, auth (scope check, `track_` key isolation, refresh), end detection (fixtures
   replayed from the Safari spike logs), and the adapter wired to a fake `Spotify.Player`.
-- Still to add with PR B: CSV formatting (in `track/`, not `utils.js`, with a project name
-  containing a comma).
+- CSV and JSON formatting (`track/export.js`: quoting, rounding, sort order) and
+  playlist partitioning and replay ordering (`track/playlists.js`).
 - DOM wiring and the real SDK are tested by hand in the browser.
 
 ### Out of v1
@@ -227,7 +234,7 @@ app-owned playlists, and metadata filters.
 
 ## Open questions
 
-- Should a stopped-early session also have an "undo / don't log" option, or is
-  always-log-actual-time fine?
-- Should the session screen show position in the playlist (track 4 of 9, time remaining)?
-  It's cheap, and it's the main benefit of a familiar playlist.
+- ~~Should a stopped-early session have an "undo / don't log" option?~~ No, not for v1.
+  It always logs actual time, and Clear plus the JSON export are enough to fix mistakes.
+- ~~Should the session screen show position in the playlist?~~ Yes, built as
+  "Track N of M · X min left".

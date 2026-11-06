@@ -7,6 +7,10 @@ import { createSpotifyApi } from './spotify-api.js';
 import { createSpotifyPlayback } from './playback/spotify.js';
 import { createLocalLogger } from './loggers/local.js';
 import { createSession, formatClock, remainingMs } from './session.js';
+import { totalsToCsv, totalsToJson, describeTotals } from './export.js';
+import { partitionPlaylists, orderReplays } from './playlists.js';
+
+const REPLAY_ORDER_KEY = 'track_replay_order';
 
 const CLIENT_ID = 'bac207f49dc041e0a2e8a92691c7a23a';
 const REDIRECT_URI = window.location.hostname === '127.0.0.1'
@@ -59,13 +63,90 @@ function setRandomBackground() {
 async function loadPlaylists() {
     const select = $('playlist-select');
     try {
-        const playlists = (await api.getPlaylists()).filter(p => !p.name.startsWith('POMO_'));
+        const { sources, saved } = partitionPlaylists(await api.getPlaylists());
         select.replaceChildren(new Option('-- Select a playlist --', ''));
-        for (const p of playlists) select.add(new Option(p.name, p.id));
+        for (const p of sources) select.add(new Option(p.name, p.id));
+        renderReplays(saved);
     } catch (error) {
         console.error(error);
         select.replaceChildren(new Option('Error loading playlists', ''));
     }
+}
+
+function readReplayOrder() {
+    try {
+        const stored = JSON.parse(localStorage.getItem(REPLAY_ORDER_KEY));
+        return Array.isArray(stored) ? stored : [];
+    } catch {
+        return [];
+    }
+}
+
+// Saved sessions in a random order that stays the same between visits.
+function renderReplays(saved) {
+    const { ordered, order } = orderReplays(saved, readReplayOrder());
+    localStorage.setItem(REPLAY_ORDER_KEY, JSON.stringify(order));
+    const select = $('replay-select');
+    select.replaceChildren(new Option('-- Choose a saved session --', ''));
+    for (const p of ordered) select.add(new Option(p.name, p.id));
+    $('replay-group').hidden = ordered.length === 0;
+}
+
+// A replay plays the saved playlist exactly: in order, no shuffle, no fitting.
+async function replay() {
+    const select = $('replay-select');
+    const playlistId = select.value;
+    if (!playlistId) return;
+    const sourceName = select.options[select.selectedIndex].textContent;
+    select.value = '';  // so choosing the same one again still fires `change`
+    try {
+        const tracks = await api.getPlaylistTracks(playlistId);
+        if (tracks.length === 0) {
+            alert('That saved session has no tracks.');
+            return;
+        }
+        preview = { tracks, sourceName, isReplay: true };
+        renderPreview();
+        showSection('preview-section');
+    } catch (error) {
+        console.error(error);
+        alert('Failed to load the saved session. Please try again.');
+    }
+}
+
+// --- logged totals ---
+
+function renderTotals() {
+    const totals = logger.getTotals();
+    const projects = Object.keys(totals).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+    $('totals').hidden = projects.length === 0;
+    $('totals-body').replaceChildren(...projects.map((project) => {
+        const row = document.createElement('tr');
+        const name = document.createElement('td');
+        name.textContent = project;
+        const hours = document.createElement('td');
+        hours.textContent = totals[project].toFixed(2);
+        row.append(name, hours);
+        return row;
+    }));
+}
+
+function download(filename, text, type) {
+    const url = URL.createObjectURL(new Blob([text], { type }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+}
+
+function clearTotals() {
+    const totals = logger.getTotals();
+    if (!confirm(`Delete ${describeTotals(totals)}? This can't be undone.`)) return;
+    logger.clear();
+    renderTotals();
 }
 
 function sanitizeSearch(query) {
@@ -132,6 +213,9 @@ function renderPreview() {
     $('preview-track-count').textContent = String(preview.tracks.length);
     $('preview-tracks').replaceChildren(...preview.tracks.map(trackRow));
     $('preview-playlist-name').value = `POMO_${preview.sourceName}_${getShortTimestamp()}`;
+    // REBUILD would only reshuffle a fixed playlist, and SAVE would copy a saved one.
+    $('regenerate-button').hidden = Boolean(preview.isReplay);
+    document.querySelector('.export').hidden = Boolean(preview.isReplay);
     $('project-list').replaceChildren(...Object.keys(logger.getTotals()).sort().map(p => new Option(p)));
 }
 
@@ -144,6 +228,7 @@ async function save() {
         const url = await api.savePlaylist(name, preview.tracks.map(t => t.uri));
         $('playlist-link').href = url;
         showSection('result-section');
+        loadPlaylists();  // so the new saved session appears in the replay list
     } catch (error) {
         console.error(error);
         alert('Failed to save playlist. Please try again.');
@@ -222,6 +307,7 @@ function endSession() {
     $('session-summary').textContent = hours > 0
         ? `Logged ${hours.toFixed(2)} h to ${project}.`
         : project ? 'Nothing played, so nothing was logged.' : 'No project, so nothing was logged.';
+    renderTotals();
 }
 
 function togglePause() {
@@ -272,6 +358,12 @@ function wireEvents() {
     $('stop-button').addEventListener('click', stopSession);
     $('new-session-button').addEventListener('click', () => showSection('playlist-section'));
     $('create-another-button').addEventListener('click', () => showSection('playlist-section'));
+    $('replay-select').addEventListener('change', replay);
+    $('export-json-button').addEventListener('click', () =>
+        download('pomodorify-hours.json', totalsToJson(logger.getTotals()), 'application/json'));
+    $('export-csv-button').addEventListener('click', () =>
+        download('pomodorify-hours.csv', totalsToCsv(logger.getTotals()), 'text/csv'));
+    $('clear-totals-button').addEventListener('click', clearTotals);
     playback.onStateChange(onPlaybackChange);
     // Closing the tab mid-session still logs the time played so far.
     window.addEventListener('pagehide', () => {
@@ -300,6 +392,7 @@ async function boot() {
     }
 
     showSection('playlist-section');
+    renderTotals();
     loadPlaylists();
     setUpPlayer();
 }

@@ -4,6 +4,8 @@ import { createSessionClock, createSession, formatClock, remainingMs } from '../
 import { createAuth, hasScopes, SCOPES, STORAGE_KEYS } from '../frontend/track/auth.js';
 import { currentTrackUri, initialTracker, nextTrackerState } from '../frontend/track/playback/spotify-state.js';
 import { createSpotifyPlayback } from '../frontend/track/playback/spotify.js';
+import { totalsToCsv, totalsToJson, describeTotals } from '../frontend/track/export.js';
+import { partitionPlaylists, orderReplays } from '../frontend/track/playlists.js';
 
 let passed = 0;
 let failed = 0;
@@ -569,6 +571,92 @@ test('logout removes only track_ keys', () => {
     for (const k of Object.values(STORAGE_KEYS)) storage.setItem(k, 'x');
     auth.logout();
     assert.deepEqual(Object.keys(storage.data).sort(), ['pomodorify_hours', 'spotify_access_token']);
+});
+
+// --- export ---
+console.log('\nexport');
+
+test('CSV has a header and rows sorted by project, hours to 2 decimals', () => {
+    assert.equal(
+        totalsToCsv({ beta: 1.005, Alpha: 2, gamma: 0.3333333 }),
+        'project,hours\r\nAlpha,2.00\r\nbeta,1.00\r\ngamma,0.33\r\n',
+    );
+});
+
+test('CSV quotes a project name containing a comma', () => {
+    assert.equal(totalsToCsv({ 'Atlas, mapping': 1 }), 'project,hours\r\n"Atlas, mapping",1.00\r\n');
+});
+
+test('CSV doubles quotes inside a quoted name', () => {
+    assert.equal(totalsToCsv({ 'The "big" one': 1 }), 'project,hours\r\n"The ""big"" one",1.00\r\n');
+});
+
+test('CSV quotes a name containing a newline', () => {
+    assert.equal(totalsToCsv({ 'two\nlines': 1 }), 'project,hours\r\n"two\nlines",1.00\r\n');
+});
+
+test('CSV of empty totals is just the header', () => {
+    assert.equal(totalsToCsv({}), 'project,hours\r\n');
+});
+
+test('JSON keeps full precision and round-trips', () => {
+    const totals = { Atlas: 0.3333333333, 'Board, game': 2 };
+    assert.deepEqual(JSON.parse(totalsToJson(totals)), totals);
+});
+
+test('describeTotals sums hours and counts projects', () => {
+    assert.equal(describeTotals({ a: 10, b: 2.4, c: 0 }), '12.40 h across 3 projects');
+    assert.equal(describeTotals({ a: 1 }), '1.00 h across 1 project');
+});
+
+// --- playlists ---
+console.log('\nplaylists');
+
+const pl = (id, name = id) => ({ id, name });
+
+test('partitionPlaylists separates POMO_ saved sessions from sources, keeping order', () => {
+    const { sources, saved } = partitionPlaylists([pl('a', 'Bluegrass'), pl('b', 'POMO_x_Nov06'), pl('c', 'Ambient'), pl('d', 'POMO_y')]);
+    assert.deepEqual(sources.map(p => p.id), ['a', 'c']);
+    assert.deepEqual(saved.map(p => p.id), ['b', 'd']);
+});
+
+test('partitionPlaylists only matches the prefix at the start', () => {
+    const { saved } = partitionPlaylists([pl('a', 'My POMO_ list')]);
+    assert.deepEqual(saved, []);
+});
+
+// random() values that pick each insertion slot explicitly.
+const randoms = (...values) => { let i = 0; return () => values[i++]; };
+
+test('orderReplays with no stored order inserts at random positions (a shuffle)', () => {
+    // a -> [a]; b at slot 0 -> [b, a]; c at slot 1 of 3 -> [b, c, a]
+    const { order } = orderReplays([pl('a'), pl('b'), pl('c')], [], randoms(0, 0, 0.5));
+    assert.deepEqual(order, ['b', 'c', 'a']);
+});
+
+test('orderReplays keeps the stored order on later loads', () => {
+    const saved = [pl('a'), pl('b'), pl('c')];
+    const random = () => { throw new Error('should not need randomness'); };
+    const { ordered, order } = orderReplays(saved, ['c', 'a', 'b'], random);
+    assert.deepEqual(order, ['c', 'a', 'b']);
+    assert.deepEqual(ordered.map(p => p.id), ['c', 'a', 'b']);
+});
+
+test('orderReplays drops deleted playlists and inserts new ones', () => {
+    // stored [c, x, a]; x deleted -> [c, a]; b new at slot 1 -> [c, b, a]
+    const { order } = orderReplays([pl('a'), pl('b'), pl('c')], ['c', 'x', 'a'], randoms(0.5));
+    assert.deepEqual(order, ['c', 'b', 'a']);
+});
+
+test('orderReplays ignores duplicate ids in the stored order', () => {
+    const { order } = orderReplays([pl('a'), pl('b')], ['a', 'a', 'b']);
+    assert.deepEqual(order, ['a', 'b']);
+});
+
+test('orderReplays with the default random is a permutation', () => {
+    const saved = ['a', 'b', 'c', 'd', 'e'].map(id => pl(id));
+    const { order } = orderReplays(saved);
+    assert.deepEqual([...order].sort(), ['a', 'b', 'c', 'd', 'e']);
 });
 
 // --- Summary ---

@@ -4,9 +4,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-Pomodorify is a pure client-side static web app. No build step, no package manager, no server. Three files do everything: `frontend/index.html`, `frontend/app.js`, `frontend/style.css`.
+Pomodorify is a pure client-side static web app. No build step, no package manager, no server. There are two apps on one origin:
+
+- **Root app** (`/`): `frontend/index.html`, `frontend/app.js`, `frontend/style.css`. It builds a duration-fitted playlist and saves or plays it in Spotify.
+- **Track app** (`/track/index.html`, `frontend/track/`): v2 of the design in `DESIGN_V2.md`. It plays the playlist in the tab via the Web Playback SDK, runs a session clock, logs time per project to `localStorage`, and offers JSON/CSV export and replay of saved `POMO_` playlists. It may eventually replace the root app.
 
 Deployed at `https://pomodorifi.es`.
+
+## CRITICAL: keep the two apps separate
+
+- **The track app never edits shared files.** It only reads `../utils.js`, `../style.css` and `../assets/`. New logic goes in `frontend/track/`, even if it duplicates the root app. The root app and its deployment are meant to stay unchanged while `/track` matures.
+- **Track app storage keys are prefixed `track_`**, so its Spotify session never touches the root app's. You log in to each app separately. The exception is `pomodorify_hours`, which is unprefixed on purpose: the root app doesn't use it, and staying unprefixed means a later replacement keeps the data.
 
 ## Running Locally
 
@@ -14,9 +22,11 @@ Deployed at `https://pomodorifi.es`.
 cd frontend && python3 -m http.server 8080
 ```
 
-Open `http://127.0.0.1:8080` — the redirect URI is auto-detected based on hostname. Use `127.0.0.1` not `localhost` — Spotify rejects `localhost` as insecure in the Developer Dashboard.
+Open `http://127.0.0.1:8080` (root) or `http://127.0.0.1:8080/track/index.html` (track). The redirect URI is auto-detected based on hostname. Use `127.0.0.1` not `localhost` — Spotify rejects `localhost` as insecure in the Developer Dashboard.
 
-`http://127.0.0.1:8080` is already registered in the Spotify Developer Dashboard.
+Registered redirect URIs: `http://127.0.0.1:8080`, `https://pomodorifi.es`, `http://127.0.0.1:8080/track/index.html`, `https://pomodorifi.es/track/index.html`. Port 8080 is fixed by these, so check nothing else is bound to it (`lsof -nP -iTCP:8080 -sTCP:LISTEN`). Other projects' dev servers have used it.
+
+**Safari HTTPS-Only mode blocks the OAuth callback** (an `http://` redirect). To work around it, paste the failed callback URL into the address bar and accept the warning, or use Chrome. The fix is tracked in #11.
 
 ## Tests
 
@@ -24,7 +34,13 @@ Open `http://127.0.0.1:8080` — the redirect URI is auto-detected based on host
 node tests/test.mjs
 ```
 
-Pure logic functions are in `frontend/utils.js` (ES module). Tests cover `formatDuration`, `selectTracksForDuration`, and `generateRandomString`. The `selectTracksForDuration` function accepts an injectable shuffle function as a third argument (defaults to `Math.random`).
+```bash
+node tests/track.test.mjs
+```
+
+CI runs both. `tests/test.mjs` covers the root app's pure functions in `frontend/utils.js`. The `selectTracksForDuration` function accepts an injectable shuffle function as a third argument (defaults to `Math.random`).
+
+`tests/track.test.mjs` covers the track app. Everything with logic takes its dependencies (storage, `now`, `fetch`, the SDK loader, `random`) as injectable arguments. That includes the playback adapter, which is tested against a fake `Spotify.Player`. The end-detection fixtures are real Safari spike logs. DOM wiring (`track/track.js`) and the real SDK are tested by hand in the browser.
 
 ## Deployment
 
@@ -43,6 +59,17 @@ npm run deploy   # cdk deploy --profile personal
 
 ## Architecture
 
+### Track app (`frontend/track/`)
+
+- `track.js`: the UI. Five sections (`login`, `playlist`, `preview`, `session`, `result`) switched by `showSection(id)`.
+- `auth.js`: PKCE with `track_` keys. The granted scope is stored, and a token missing any required scope counts as logged out.
+- `spotify-api.js`: playlists, tracks, search, save. `playlists.js`: splitting off `POMO_` playlists and the replay order.
+- `session.js`: the session clock (only counts while playing; repeat calls are harmless) and `createSession().finish()`, which logs once whether it's called by Stop, playlist end or `pagehide`. Also the time-left and clock display helpers.
+- `playback/spotify.js`: the Web Playback SDK adapter. `playback/spotify-state.js`: pure state interpretation and end detection.
+- `loggers/local.js`: `pomodorify_hours` totals. `export.js`: CSV/JSON formatting.
+
+### Root app
+
 Everything lives in a single `PomodorifyApp` class (`frontend/app.js`). The UI has four sections (`login-section`, `playlist-section`, `preview-section`, `result-section`) that are toggled via `display: none/block` — only one is visible at a time. The `show*Section()` methods handle all transitions.
 
 **Auth**: Spotify Authorization Code flow with PKCE. Tokens stored in `localStorage`. `ensureValidToken()` is called at the top of every API method and auto-refreshes when within 5 minutes of expiry.
@@ -60,7 +87,9 @@ Everything lives in a single `PomodorifyApp` class (`frontend/app.js`). The UI h
 
 ## Next Steps
 
-- **Background image management** — currently requires editing the hardcoded array in `app.js` and manually deploying assets, which is painful. Explore a better approach.
+- **Spotify February 2026 API migration (#7)** — now covers both apps. The track app copied the same deprecated endpoints and the `product`-based Premium check.
+- **Background image management** — currently requires editing the hardcoded arrays in `app.js` *and* `track/track.js` (#12) and manually deploying assets, which is painful. Explore a better approach.
+- **Track app follow-ons** — see "Options left open" in `DESIGN_V2.md` (GitHub issue logger, cross-device log, YouTube).
 
 ## Key Decisions
 
@@ -78,3 +107,12 @@ Everything lives in a single `PomodorifyApp` class (`frontend/app.js`). The UI h
 - GitHub Actions authenticates to AWS via OIDC (role restricted to `main` of this repo) — no long-lived AWS keys in GitHub
 - Future server-side features: add a Lambda behind the same CloudFront distribution on `/api/*` (same origin, no CORS)
 - `config/` (old Flask-era config with a Spotify client secret) was removed; PKCE needs no secret
+- The track app is a separate app at `/track` rather than a change to the root app. Scot wanted the current app and its deployment left alone until v2 proves itself
+- The track app's URL is `/track/index.html`, not `/track/`. CloudFront's `defaultRootObject` only covers `/`, and a pretty URL would need a CloudFront Function, which is an infra change we chose not to make
+- **End detection is stateful.** At the end of a playlist the Web Playback SDK wraps back to track 1 and pauses, which looks the same as "paused before starting". `ended` therefore means a paused state on an earlier track after the last track was reached. Don't simplify it to a rule that only looks at the current state (see `playback/spotify-state.js`)
+- The SDK sends every change as a burst of 2–5 identical states. The adapter deduplicates them
+- `playback.play()` must run inside the click handler with nothing awaited first, because browsers block audio that isn't started by a user gesture. Load tracks before the click
+- Discover Weekly is dropped from the track app. It's Spotify-specific and unused (and unreadable after the Feb 2026 API changes)
+- Replay list order: random the first time, then stable (`track_replay_order`). New saved sessions are inserted at random positions. That's Scot's choice
+- `track.css` has `[hidden] { display: none !important; }` because `style.css` sets `display` on classes like `.button-group`, which otherwise override the `hidden` attribute
+- Logging always records actual time played. There's no "undo / don't log" in v1; Clear plus the JSON export cover mistakes

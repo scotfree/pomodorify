@@ -1,14 +1,29 @@
-// Pomodorify Track: build a duration-fitted playlist, play it in this tab,
-// and log the time actually played against a project. See DESIGN_V2.md.
+// Pomodorify Track: build a duration-fitted Spotify playlist, play it in this
+// tab and log the time actually played against a task. See DESIGN_V2.md.
+//
+// The UI matches the Spotless app's (../spotless/), adapted for Spotify. One
+// page, two screens:
+//   home: four stacked panels. Pomodoro time tracking (pick a playlist and a
+//         task, start), Create pomodoro playlists (Search, Playlist, List),
+//         Current tasks (logged time, Export, Clear) and Settings. Below them,
+//         Now playing (current track and controls) during a session.
+//   playlist: one playlist (rename, delete, tracks, labels, start, save to
+//         Spotify).
+// Popups (<dialog>) for the sources, Export, Clear, Settings, the local task
+// and new GitHub issues.
+//
+// Playlists are kept in this browser (store.js). POMO_ playlists saved to
+// Spotify (by this app's SAVE or the root app) are listed too, and copied in
+// when chosen.
 
-import { formatDuration, selectTracksForDuration, getShortTimestamp } from '../utils.js';
+import { formatDuration, selectTracksForDuration } from '../utils.js';
 import { createAuth, STORAGE_KEYS } from './auth.js';
 import { createSpotifyApi } from './spotify-api.js';
 import { createSpotifyPlayback } from './playback/spotify.js';
 import { createLocalLogger } from './loggers/local.js';
 import { createSession, formatClock, remainingMs } from './session.js';
 import { totalsToCsv, totalsToJson, describeTotals } from './export.js';
-import { partitionPlaylists, orderReplays } from './playlists.js';
+import { partitionPlaylists, orderReplays, SAVED_PREFIX } from './playlists.js';
 import { createGithubSettings } from './github/settings.js';
 import { createGithubApi } from './github/api.js';
 import { describeTarget } from './github/hours-target.js';
@@ -17,6 +32,10 @@ import {
     NO_PROJECT, NEW_ISSUE, DEFAULT_ISSUE_TYPE,
     parseProjectChoice, projectValue, issueLabel, defaultRepoId,
 } from './github/picker.js';
+import { createPlaylistStore } from './store.js';
+import { filterTracks, rejection, searchQuery, describeSearchOptions, describeShared, SONG_RANGE } from './search.js';
+import { buildPlaylist, parseLines, fetchSpotifyTitle, FILLER_QUERY } from './build.js';
+import { parseLabels, fetchIssueLabels, formatLabelCounts } from './labels.js';
 
 const REPLAY_ORDER_KEY = 'track_replay_order';
 
@@ -35,13 +54,25 @@ const BACKGROUNDS = [
     '../assets/tta_city2.jpg',
 ];
 
-const SECTIONS = ['login-section', 'playlist-section', 'preview-section', 'session-section', 'result-section'];
+const SCREENS = ['login-screen', 'home-screen', 'playlist-screen'];
+
+// U+FE0E asks for the plain glyph, not a colour emoji.
+const CONTROLS = [
+    { action: 'prev', label: '⏮︎', title: 'Previous track' },
+    { action: 'toggle', label: '⏸︎', title: 'Pause' },
+    { action: 'stop', label: '⏹︎', title: 'Stop' },
+    { action: 'next', label: '⏭︎', title: 'Next track' },
+];
+
+// Spotify playlists in the Pomodoro dropdown have this value prefix.
+const SPOTIFY_VALUE = 'spotify:';
 
 const $ = (id) => document.getElementById(id);
 
 const auth = createAuth({ clientId: CLIENT_ID, redirectUri: REDIRECT_URI });
 const api = createSpotifyApi(auth.getToken);
 const playback = createSpotifyPlayback({ getToken: auth.getToken, name: 'Pomodorify' });
+const playlists = createPlaylistStore();
 const logger = createLocalLogger();
 
 const CREATED_LABEL = { name: 'pomodorify created', color: 'e4572e', description: 'Created from Pomodorify' };
@@ -54,22 +85,35 @@ let github = { viewer: null, repos: [], projects: [], issues: new Map() };
 let createInfo = null;     // getRepoCreateInfo() for the new-issue form's repo
 let pageHiding = false;    // set on pagehide so the GitHub write uses keepalive
 
-let preview = null;        // { tracks, sourceName }
+let me = null;             // GET /me
+let spotifySources = [];   // the user's own playlists (FROM PLAYLIST)
+let spotifySaved = [];     // POMO_ playlists in Spotify, in replay order
+let selectedId = null;     // the local playlist chosen in the Pomodoro panel
+let viewedId = null;       // the playlist on the playlist screen
 let playerReady = false;
+let playerStarting = false;
+
 let session = null;
 let sessionLabel = '';     // what the session logs to (title or issue label)
 let sessionTracks = [];
+let runningId = null;      // the playlist being played
 let current = { index: -1, startedAtMs: 0 };  // track position, in session-clock time
 let playing = false;
 let ticker = null;
 
-// --- sections ---
+// Labels: an issue's labels, fetched when it's chosen, and the session's.
+const issueLabels = new Map();  // issue id -> label names
+let sessionPlaylistId = null;
+let sessionLabels = null;       // names, or a promise while an issue's are loading
 
-function showSection(id) {
-    for (const section of SECTIONS) {
-        $(section).style.display = section === id ? 'block' : 'none';
-    }
+// --- screens ---
+
+function showScreen(id) {
+    for (const screen of SCREENS) $(screen).hidden = screen !== id;
+    window.scrollTo(0, 0);
 }
+
+const isRunning = () => Boolean(session && !session.isFinished());
 
 function setRandomBackground() {
     const bg = BACKGROUNDS[Math.floor(Math.random() * BACKGROUNDS.length)];
@@ -77,19 +121,104 @@ function setRandomBackground() {
         `linear-gradient(rgba(25, 25, 35, 0.4), rgba(25, 25, 35, 0.4)), url('${bg}')`;
 }
 
-// --- playlist builder ---
+function setNote(id, text) {
+    $(id).textContent = text || '';
+    $(id).hidden = !text;
+}
 
-async function loadPlaylists() {
-    const select = $('playlist-select');
+function el(tag, className, text) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined) node.textContent = text;
+    return node;
+}
+
+// Options of `.end-first` selects show the end of their text when cut off
+// (CSS direction: rtl). The LRM marks keep punctuation like "(25:00)" in place.
+const endFirst = (text, value) => new Option(`\u200E${text}\u200E`, value);
+
+function totalMs(tracks) {
+    return tracks.reduce((sum, t) => sum + t.duration_ms, 0);
+}
+
+function minutesSetting() {
+    return parseInt($('duration').value, 10) || 25;
+}
+
+function today() {
+    return new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+// --- Pomodoro panel: playlist choice and Start ---
+
+// Local playlists (newest first), then POMO_ playlists in Spotify that aren't
+// copied in yet. Choosing one of those copies it in (loadSpotifySaved), so it
+// can be started inside the click with nothing left to load.
+function renderPlaylists() {
+    const list = playlists.list();
+    if (!list.some(p => p.id === selectedId)) selectedId = null;
+    const select = $('replay-select');
+    const spotifyOnly = spotifySaved.filter(p => !playlists.findBySpotifyId(p.id));
+    const group = document.createElement('optgroup');
+    group.label = 'Saved in Spotify';
+    group.append(...spotifyOnly.map(p => endFirst(p.name, SPOTIFY_VALUE + p.id)));
+    select.replaceChildren(
+        new Option(list.length || spotifyOnly.length ? 'Playlist' : 'Playlist (none yet: create one below)', ''),
+        ...list.map(p => endFirst(`${p.name} (${formatDuration(totalMs(p.tracks))})`, p.id)),
+        ...(spotifyOnly.length ? [group] : []));
+    select.value = selectedId ?? '';
+    renderStartButtons();
+}
+
+function renderStartButtons() {
+    $('view-button').disabled = !selectedId;
+    $('start-button').disabled = !(playerReady && selectedId && !isRunning());
+    $('playlist-start-button').disabled = !(playerReady && viewedId && !isRunning());
+}
+
+async function onPlaylistChoice() {
+    const value = $('replay-select').value;
+    if (!value.startsWith(SPOTIFY_VALUE)) {
+        selectedId = value || null;
+        renderStartButtons();
+        return;
+    }
+    selectedId = null;
+    renderStartButtons();
+    const spotifyId = value.slice(SPOTIFY_VALUE.length);
+    const saved = spotifySaved.find(p => p.id === spotifyId);
+    setNote('player-note', 'Loading the playlist from Spotify…');
     try {
-        const { sources, saved } = partitionPlaylists(await api.getPlaylists());
-        select.replaceChildren(new Option('-- Select a playlist --', ''));
-        for (const p of sources) select.add(new Option(p.name, p.id));
-        renderReplays(saved);
+        const tracks = await api.getPlaylistTracks(spotifyId);
+        if (tracks.length === 0) throw new Error('it has no tracks');
+        const copy = playlists.findBySpotifyId(spotifyId) ?? playlists.save({
+            name: saved?.name ?? 'Spotify playlist',
+            tracks,
+            source: { kind: 'spotify' },
+            spotifyId,
+        });
+        selectedId = copy.id;
+        setNote('player-note', '');
     } catch (error) {
         console.error(error);
-        select.replaceChildren(new Option('Error loading playlists', ''));
+        setNote('player-note', `Couldn't load that playlist: ${error.message}`);
     }
+    renderPlaylists();
+}
+
+// The user's playlists: their own (FROM PLAYLIST) and the POMO_ ones.
+async function loadSpotifyPlaylists() {
+    try {
+        const { sources, saved } = partitionPlaylists(await api.getPlaylists());
+        spotifySources = sources;
+        const { ordered, order } = orderReplays(saved, readReplayOrder());
+        localStorage.setItem(REPLAY_ORDER_KEY, JSON.stringify(order));
+        spotifySaved = ordered;
+    } catch (error) {
+        console.error(error);
+        setNote('player-note', `Couldn't load your Spotify playlists: ${error.message}`);
+    }
+    renderPlaylists();
 }
 
 function readReplayOrder() {
@@ -101,53 +230,383 @@ function readReplayOrder() {
     }
 }
 
-// Saved sessions in a random order that stays the same between visits.
-function renderReplays(saved) {
-    const { ordered, order } = orderReplays(saved, readReplayOrder());
-    localStorage.setItem(REPLAY_ORDER_KEY, JSON.stringify(order));
-    const select = $('replay-select');
-    select.replaceChildren(new Option('-- Choose a saved session --', ''));
-    for (const p of ordered) select.add(new Option(p.name, p.id));
-    $('replay-group').hidden = ordered.length === 0;
+// --- playlist screen ---
+
+function sourceText(p) {
+    if (p.source?.kind === 'search') return `Search “${p.source.query}” · ${describeSearchOptions(p.source.options)}`;
+    if (p.source?.kind === 'playlist') return [`Playlist “${p.source.name}”`, ...describeShared(p.source.options)].join(' · ');
+    if (p.source?.kind === 'list') return ['List', ...describeShared(p.source.options)].join(' · ');
+    if (p.source?.kind === 'spotify') return 'Saved in Spotify';
+    return '—';
 }
 
-// A replay plays the saved playlist exactly: in order, no shuffle, no fitting.
-async function replay() {
-    const select = $('replay-select');
-    const playlistId = select.value;
-    if (!playlistId) return;
-    const sourceName = select.options[select.selectedIndex].textContent;
-    select.value = '';  // so choosing the same one again still fires `change`
+const spotifyUrl = (uri) => `https://open.spotify.com/${uri.split(':').slice(1).join('/')}`;
+
+function trackLink(track) {
+    const a = el('a', '', track.name);
+    a.href = spotifyUrl(track.uri);
+    a.target = '_blank';
+    a.rel = 'noopener';
+    return a;
+}
+
+function trackRow(track, index) {
+    const row = el('div', 'track-item');
+    if (viewedId === runningId && isRunning() && index === current.index) row.classList.add('current');
+    const info = el('div', 'track-info');
+    const name = el('div', 'track-name');
+    name.append(trackLink(track));
+    info.append(name, el('div', 'track-artist', track.artist));
+    row.append(info, el('div', 'track-duration', formatDuration(track.duration_ms)));
+    return row;
+}
+
+function openPlaylist(id) {
+    viewedId = id;
+    renderPlaylistScreen();
+    showScreen('playlist-screen');
+}
+
+function renderPlaylistScreen() {
+    const p = playlists.get(viewedId);
+    if (!p) return;
+    $('playlist-name').value = p.name;
+    $('playlist-source').textContent = sourceText(p);
+    $('playlist-length').textContent = formatDuration(totalMs(p.tracks));
+    $('playlist-count').textContent = String(p.tracks.length);
+    const labels = formatLabelCounts(p.labels);
+    $('playlist-labels-list').textContent = labels;
+    $('playlist-labels').hidden = !labels;
+    $('playlist-tracks').replaceChildren(...p.tracks.map(trackRow));
+    $('save-spotify-button').hidden = Boolean(p.spotifyId);
+    $('open-spotify-link').hidden = !p.spotifyId;
+    if (p.spotifyId) $('open-spotify-link').href = `https://open.spotify.com/playlist/${p.spotifyId}`;
+
+    const playingThis = isRunning() && runningId === p.id;
+    $('playlist-task').textContent = playingThis ? `Playing now. ${loggingText(sessionTarget)}`
+        : isRunning() ? 'Another playlist is playing.'
+            : loggingText(chooseLogTarget(), true);
+    renderStartButtons();
+}
+
+// Export mode: writes the playlist to the user's Spotify account (POMO_ name,
+// so the root app's dropdown leaves it out).
+async function saveToSpotify() {
+    const p = playlists.get(viewedId);
+    if (!p || p.spotifyId) return;
+    const button = $('save-spotify-button');
+    button.disabled = true;
     try {
-        const tracks = await api.getPlaylistTracks(playlistId);
-        if (tracks.length === 0) {
-            alert('That saved session has no tracks.');
-            return;
-        }
-        preview = { tracks, sourceName, isReplay: true };
-        renderPreview();
-        showSection('preview-section');
+        const name = p.name.startsWith(SAVED_PREFIX) ? p.name : `${SAVED_PREFIX}${p.name}`;
+        const { id } = await api.savePlaylistWithId(name, p.tracks.map(t => t.uri));
+        if (id) playlists.setSpotifyId(p.id, id);
+        renderPlaylistScreen();
     } catch (error) {
         console.error(error);
-        alert('Failed to load the saved session. Please try again.');
+        alert(`Couldn't save to Spotify: ${error.message}`);
+    } finally {
+        button.disabled = false;
     }
 }
 
-// --- logged totals ---
+function renamePlaylist() {
+    const name = $('playlist-name').value.trim();
+    if (!name) return;
+    playlists.rename(viewedId, name);
+    renderPlaylists();
+    renderPlaylistScreen();
+}
+
+function deletePlaylist() {
+    const p = playlists.get(viewedId);
+    if (!p) return;
+    if (isRunning() && runningId === p.id) {
+        alert('Stop the session first.');
+        return;
+    }
+    if (!confirm(`Delete the playlist "${p.name}"? Logged time isn't affected.${p.spotifyId ? ' It stays in Spotify.' : ''}`)) return;
+    playlists.remove(p.id);
+    viewedId = null;
+    renderPlaylists();
+    showScreen('home-screen');
+}
+
+// --- the three sources: Search, Playlist, List ---
+
+// The Live / Covers row in the Create panel: all three sources use it.
+function sharedOptions() {
+    return {
+        live: $('opt-live').checked,
+        covers: $('opt-covers').checked,
+    };
+}
+
+function sharedSummary() {
+    const o = sharedOptions();
+    return [`${minutesSetting()} min`, o.live ? 'with live' : 'no live', o.covers ? 'with covers' : 'no covers'].join(' · ');
+}
+
+function readSearchOptions() {
+    return {
+        minMinutes: parseFloat($('search-min').value),
+        maxMinutes: parseFloat($('search-max').value),
+        instrumental: $('opt-instrumental').checked,
+        explicit: $('opt-explicit').checked,
+        ...sharedOptions(),
+    };
+}
+
+// Saves a new playlist, selects it, and opens it.
+function savedAndOpened(fields, dialog) {
+    const saved = playlists.save(fields);
+    $(dialog).close();
+    selectedId = saved.id;
+    renderPlaylists();
+    openPlaylist(saved.id);
+}
+
+// Searches Spotify (up to 50 results), keeps those that fit the options,
+// fits them to the Minutes setting, saves the playlist and opens it.
+async function createSearch() {
+    const query = $('search-input').value.trim();
+    if (!query) {
+        setNote('search-status', 'Please enter a search.');
+        return;
+    }
+    const minutes = minutesSetting();
+    const options = readSearchOptions();
+    const button = $('search-create-button');
+    button.disabled = true;
+    setNote('search-status', 'Searching…');
+    try {
+        const found = filterTracks(await api.searchTracks(searchQuery(query, options)), query, options);
+        if (found.length === 0) {
+            setNote('search-status', 'No tracks fit. Try another search or a wider length range.');
+            return;
+        }
+        savedAndOpened({
+            name: $('search-name').value.trim() || `${query} · ${minutes} min · ${today()}`,
+            query,
+            minutes,
+            tracks: selectTracksForDuration(found, minutes),
+            source: { kind: 'search', query, options },
+        }, 'search-dialog');
+        $('search-name').value = '';
+    } catch (error) {
+        console.error(error);
+        setNote('search-status', `Spotify search failed: ${error.message}`);
+    } finally {
+        button.disabled = false;
+    }
+}
+
+// FROM PLAYLIST: one of the user's own Spotify playlists as the pool.
+function openSource() {
+    const select = $('source-select');
+    const previous = select.value;
+    select.replaceChildren(
+        new Option(spotifySources.length ? 'Your Spotify playlist' : 'Your Spotify playlist (none found)', ''),
+        ...spotifySources.map(p => endFirst(p.name, p.id)));
+    select.value = spotifySources.some(p => p.id === previous) ? previous : '';
+    $('source-shared').textContent = `${sharedSummary()}. Shuffled and fitted to the length.`;
+    setNote('source-status', '');
+    $('source-create-button').disabled = false;
+    $('source-dialog').showModal();
+}
+
+async function createFromSource() {
+    const select = $('source-select');
+    const playlist = spotifySources.find(p => p.id === select.value);
+    if (!playlist) {
+        setNote('source-status', 'Please choose a playlist.');
+        return;
+    }
+    const minutes = minutesSetting();
+    const options = sharedOptions();
+    const button = $('source-create-button');
+    button.disabled = true;
+    setNote('source-status', 'Loading…');
+    try {
+        // Only length limits that a playlist the user chose would never hit.
+        const range = { minMinutes: 0, maxMinutes: 600, explicit: true, ...options };
+        const found = filterTracks(await api.getPlaylistTracks(playlist.id), '', range);
+        if (found.length === 0) {
+            setNote('source-status', 'No tracks fit. Try allowing live versions or covers.');
+            return;
+        }
+        savedAndOpened({
+            name: $('source-name').value.trim() || `${playlist.name} · ${minutes} min · ${today()}`,
+            minutes,
+            tracks: selectTracksForDuration(found, minutes),
+            source: { kind: 'playlist', name: playlist.name, options },
+        }, 'source-dialog');
+        $('source-name').value = '';
+    } catch (error) {
+        console.error(error);
+        setNote('source-status', `Couldn't read that playlist: ${error.message}`);
+    } finally {
+        button.disabled = false;
+    }
+}
+
+// FROM LIST: each line is searched on Spotify (one page of 10) and the first
+// track that fits is taken. See build.js.
+async function searchSong(query) {
+    const tracks = await api.searchTracks(query, { pages: 1 });
+    const options = { ...SONG_RANGE, explicit: true, ...sharedOptions() };
+    // The bluegrass filler is any instrumental bluegrass, not one song.
+    const text = query === FILLER_QUERY ? '' : query;
+    return {
+        results: tracks.map((track) => {
+            const reason = rejection(track, text, options);
+            return reason ? { id: track.uri, name: track.name, reason } : { track };
+        }),
+    };
+}
+
+let built = null;  // the playlist the last build saved
+
+function openBuild() {
+    $('build-input').hidden = false;
+    $('build-output').hidden = true;
+    $('build-duration-note').textContent = `${sharedSummary()}. Lines are picked at random; only the ones needed are searched.`;
+    $('build-dialog').showModal();
+    $('build-title').focus();
+}
+
+function syncSliders(changed) {
+    const min = $('search-min');
+    const max = $('search-max');
+    if (parseFloat(min.value) > parseFloat(max.value)) {
+        if (changed === min) max.value = min.value;
+        else min.value = max.value;
+    }
+    $('search-min-value').textContent = min.value;
+    $('search-max-value').textContent = max.value;
+}
+
+function openSearch() {
+    syncSliders();
+    $('search-shared').textContent = sharedSummary();
+    setNote('search-status', '');
+    $('search-create-button').disabled = false;
+    $('search-dialog').showModal();
+    $('search-input').focus();
+}
+
+function trackItem(track, prefix = '') {
+    const li = el('li');
+    if (prefix) li.append(prefix);
+    li.append(trackLink(track), ` — ${track.artist} (${formatDuration(track.duration_ms)})`);
+    return li;
+}
+
+function renderLogEntry(entry) {
+    const li = el('li');
+    const steps = el('ul');
+    if (entry.kind === 'line') {
+        li.append(el('div', 'line', entry.line));
+        if (entry.spotify) steps.append(el('li', '', `Spotify link → “${entry.spotify}”`));
+        if (entry.query) {
+            const searched = el('li', '', 'Searched ');
+            searched.append(el('code', '', entry.query));
+            steps.append(searched);
+        }
+        for (const r of entry.rejected) steps.append(el('li', 'skip', `Skipped “${r.name}”: ${r.reason}`));
+        if (entry.pick) steps.append(trackItem(entry.pick, 'Picked '));
+        else if (entry.error) steps.append(el('li', 'fail', `Failed: ${entry.error}. Line skipped.`));
+        else steps.append(el('li', 'fail', 'Nothing usable found. Line skipped.'));
+    } else if (entry.kind === 'unused') {
+        const details = el('details', 'muted');
+        details.append(el('summary', '', `${entry.count} line${entry.count === 1 ? '' : 's'} not needed this time`));
+        const list = el('ul');
+        for (const line of entry.lines) list.append(el('li', '', line));
+        details.append(list);
+        li.append(details);
+    } else if (entry.source === 'results') {
+        li.append(el('div', 'line', 'Not long enough yet: filled from the other results of these searches'));
+        for (const t of entry.picks) steps.append(trackItem(t));
+        if (entry.picks.length === 0) steps.append(el('li', 'muted', 'None left to use.'));
+    } else {
+        li.append(el('div', 'line', 'Still not long enough: random instrumental bluegrass'));
+        const searched = el('li', '', 'Searched ');
+        searched.append(el('code', '', entry.query));
+        steps.append(searched);
+        for (const t of entry.picks) steps.append(trackItem(t));
+        if (entry.error) steps.append(el('li', 'fail', `Failed: ${entry.error}`));
+        else if (entry.picks.length === 0) steps.append(el('li', 'fail', 'Nothing usable found.'));
+    }
+    li.append(steps);
+    return li;
+}
+
+async function createBuild() {
+    const lines = parseLines($('build-lines').value);
+    if (lines.length === 0) {
+        alert('Please enter at least one song.');
+        return;
+    }
+    const minutes = minutesSetting();
+    const title = $('build-title').value.trim() || `List · ${minutes} min · ${today()}`;
+
+    $('build-input').hidden = true;
+    $('build-output').hidden = false;
+    $('build-log').replaceChildren();
+    $('build-result').hidden = true;
+    $('build-show-button').hidden = true;
+    $('build-close-button').disabled = true;
+    $('build-status').textContent = `Building “${title}” (${minutes} min) from ${lines.length} line${lines.length === 1 ? '' : 's'}…`;
+    built = null;
+
+    try {
+        const { tracks, totalMs: length } = await buildPlaylist({
+            lines,
+            minutes,
+            searchSong,
+            spotifyTitle: (id) => fetchSpotifyTitle(id),
+            onLog: (entry) => $('build-log').append(renderLogEntry(entry)),
+        });
+        const result = $('build-result');
+        result.replaceChildren();
+        if (tracks.length === 0) {
+            result.append(el('p', 'fail', 'Nothing usable was found, so nothing was saved.'));
+        } else {
+            built = playlists.save({ name: title, minutes, tracks, source: { kind: 'list', options: sharedOptions() } });
+            selectedId = built.id;
+            renderPlaylists();
+            const saved = el('p');
+            saved.append('Saved ', el('strong', '', `“${built.name}”`),
+                ` · ${tracks.length} tracks · ${formatDuration(length)}`);
+            result.append(saved);
+            $('build-show-button').hidden = false;
+        }
+        result.hidden = false;
+        $('build-status').textContent = 'Done. Here\'s what happened:';
+    } catch (error) {
+        console.error(error);
+        $('build-status').textContent = `Stopped: ${error.message}. Nothing was saved.`;
+    } finally {
+        $('build-close-button').disabled = false;
+    }
+}
+
+function showBuilt() {
+    $('build-dialog').close();
+    if (built) openPlaylist(built.id);
+}
+
+// --- Tasks panel: logged time, Export, Clear ---
 
 function renderTotals() {
     const totals = logger.getTotals();
     const projects = Object.keys(totals).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
-    $('totals').hidden = projects.length === 0;
+    $('totals-empty').hidden = projects.length > 0;
     $('totals-body').replaceChildren(...projects.map((project) => {
-        const row = document.createElement('tr');
-        const name = document.createElement('td');
-        name.textContent = project;
-        const hours = document.createElement('td');
-        hours.textContent = totals[project].toFixed(2);
-        row.append(name, hours);
+        const row = el('tr');
+        row.append(el('td', '', project), el('td', '', totals[project].toFixed(2)));
         return row;
     }));
+    $('project-list').replaceChildren(...projects.map(p => new Option(p)));
 }
 
 function download(filename, text, type) {
@@ -161,105 +620,57 @@ function download(filename, text, type) {
     URL.revokeObjectURL(url);
 }
 
-function clearTotals() {
+function hasTotals() {
+    return Object.keys(logger.getTotals()).length > 0;
+}
+
+function openExport() {
+    $('export-summary').textContent = hasTotals() ? `${describeTotals(logger.getTotals())}.` : 'Nothing logged yet.';
+    $('export-download-button').disabled = !hasTotals();
+    $('export-dialog').showModal();
+}
+
+function exportTotals() {
+    const format = document.querySelector('input[name="export-format"]:checked').value;
     const totals = logger.getTotals();
-    if (!confirm(`Delete ${describeTotals(totals)}? This can't be undone.`)) return;
+    if (format === 'json') download('pomodorify-hours.json', totalsToJson(totals), 'application/json');
+    else download('pomodorify-hours.csv', totalsToCsv(totals), 'text/csv');
+    $('export-dialog').close();
+}
+
+function openClear() {
+    $('clear-summary').textContent = hasTotals() ? `Delete ${describeTotals(logger.getTotals())}?` : 'Nothing logged yet.';
+    $('clear-confirm-button').disabled = !hasTotals();
+    $('clear-dialog').showModal();
+}
+
+function clearTotals() {
     logger.clear();
     renderTotals();
+    $('clear-dialog').close();
 }
 
-function sanitizeSearch(query) {
-    return query.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, ' ').trim().substring(0, 30);
+// --- playlists file ---
+
+function exportPlaylists() {
+    download('track-playlists.json', playlists.exportJson(), 'application/json');
 }
 
-async function generate() {
-    const query = $('search-input').value.trim();
-    const playlistId = $('playlist-select').value;
-    const minutes = parseInt($('duration').value, 10);
-
-    if (!query && !playlistId) {
-        alert('Please select a playlist or enter a search term.');
-        return;
-    }
-
+async function importPlaylists(event) {
+    const file = event.target.files[0];
+    event.target.value = '';  // so picking the same file again still fires `change`
+    if (!file) return;
     try {
-        let tracks;
-        let sourceName;
-        if (query) {
-            tracks = await api.searchTracks(query);
-            sourceName = `search_${sanitizeSearch(query)}`;
-        } else {
-            tracks = await api.getPlaylistTracks(playlistId);
-            const select = $('playlist-select');
-            sourceName = select.options[select.selectedIndex].textContent;
-        }
-        if (tracks.length === 0) {
-            alert('No tracks found.');
-            return;
-        }
-        preview = { tracks: selectTracksForDuration(tracks, minutes), sourceName };
-        renderPreview();
-        showSection('preview-section');
+        const added = playlists.importJson(await file.text());
+        setNote('playlists-status', `Loaded ${added} playlist${added === 1 ? '' : 's'}.`);
+        renderPlaylists();
     } catch (error) {
         console.error(error);
-        alert('Failed to generate playlist. Please try again.');
-    }
-}
-
-function trackRow(track) {
-    const row = document.createElement('div');
-    row.className = 'track-item';
-    const info = document.createElement('div');
-    info.className = 'track-info';
-    const name = document.createElement('div');
-    name.className = 'track-name';
-    name.textContent = track.name;
-    const artist = document.createElement('div');
-    artist.className = 'track-artist';
-    artist.textContent = track.artist;
-    const duration = document.createElement('div');
-    duration.className = 'track-duration';
-    duration.textContent = formatDuration(track.duration_ms);
-    info.append(name, artist);
-    row.append(info, duration);
-    return row;
-}
-
-function renderPreview() {
-    const total = preview.tracks.reduce((sum, t) => sum + t.duration_ms, 0);
-    $('preview-source-name').textContent = preview.sourceName;
-    $('preview-duration').textContent = formatDuration(total);
-    $('preview-track-count').textContent = String(preview.tracks.length);
-    $('preview-tracks').replaceChildren(...preview.tracks.map(trackRow));
-    $('preview-playlist-name').value = `POMO_${preview.sourceName}_${getShortTimestamp()}`;
-    // REBUILD would only reshuffle a fixed playlist, and SAVE would copy a saved one.
-    $('regenerate-button').hidden = Boolean(preview.isReplay);
-    document.querySelector('.export').hidden = Boolean(preview.isReplay);
-    $('project-list').replaceChildren(...Object.keys(logger.getTotals()).sort().map(p => new Option(p)));
-}
-
-// --- export (SAVE) ---
-
-async function save() {
-    const name = $('preview-playlist-name').value.trim()
-        || `POMO_${preview.sourceName}_${getShortTimestamp()}`;
-    try {
-        const url = await api.savePlaylist(name, preview.tracks.map(t => t.uri));
-        $('playlist-link').href = url;
-        showSection('result-section');
-        loadPlaylists();  // so the new saved session appears in the replay list
-    } catch (error) {
-        console.error(error);
-        alert('Failed to save playlist. Please try again.');
+        setNote('playlists-status', `Couldn't load that file: ${error.message}`);
     }
 }
 
 // --- GitHub: settings, Project/issue pickers, new issue ---
-
-function setNote(id, text) {
-    $(id).textContent = text || '';
-    $(id).hidden = !text;
-}
 
 function renderGithubSettings() {
     $('github-fields').value = githubSettings.getFieldNames().join(', ');
@@ -272,7 +683,8 @@ async function loadGithub() {
     github = { viewer: null, repos: [], projects: [], issues: new Map() };
     renderProjectOptions();
     if (!githubSettings.getToken()) {
-        setNote('github-note', 'Add a GitHub token (below the playlist builder) to log time to issues.');
+        $('project-options').replaceChildren(new Option('GitHub projects: add a token in Settings', '', false, false));
+        $('project-options').firstChild.disabled = true;
         renderGithubSettings();
         return;
     }
@@ -328,15 +740,15 @@ async function onProjectChange() {
     const value = $('project-select').value;
     const choice = parseProjectChoice(value);
     const usesIssues = choice.kind !== 'none';
-    $('title-group').hidden = usesIssues;
-    $('issue-group').hidden = !usesIssues;
-    $('new-issue-form').hidden = true;
+    $('project-input').hidden = usesIssues;
+    $('issue-select').hidden = !usesIssues;
     setNote('issue-note', '');
+    renderTaskView();
     if (!usesIssues) return;
 
     const select = $('issue-select');
     if (!github.issues.has(value)) {
-        select.replaceChildren(new Option('Loading issues…', ''));
+        select.replaceChildren(new Option('Issue (loading…)', ''));
         try {
             const issues = choice.kind === 'project'
                 ? await githubApi.listProjectIssues(choice.id)
@@ -344,7 +756,7 @@ async function onProjectChange() {
             github.issues.set(value, issues);
         } catch (error) {
             console.error(error);
-            select.replaceChildren(new Option('Error loading issues', ''));
+            select.replaceChildren(new Option('Issue (failed to load)', ''));
             return;
         }
         if ($('project-select').value !== value) return;  // changed while loading
@@ -355,9 +767,9 @@ async function onProjectChange() {
 function renderIssueOptions(selectedId = '') {
     const issues = selectedIssues();
     $('issue-select').replaceChildren(
-        new Option(issues.length ? '-- Choose an issue --' : '-- No open issues --', ''),
+        new Option(issues.length ? 'Issue' : 'Issue (none open)', ''),
         new Option('+ New issue', NEW_ISSUE),
-        ...issues.map(i => new Option(issueLabel(i), i.id)),
+        ...issues.map(i => endFirst(issueLabel(i), i.id)),
     );
     $('issue-select').value = selectedId;
     onIssueChange();
@@ -370,8 +782,8 @@ function selectedIssue() {
 
 async function onIssueChange() {
     const value = $('issue-select').value;
-    $('new-issue-form').hidden = value !== NEW_ISSUE;
     setNote('issue-note', '');
+    renderTaskView();
     if (value === NEW_ISSUE) {
         showNewIssueForm();
         return;
@@ -380,12 +792,19 @@ async function onIssueChange() {
     if (!issue) return;
     setNote('issue-note', 'Checking hours fields…');
     try {
-        const target = await githubLogger.prepare(issue.id);
-        if ($('issue-select').value === issue.id) setNote('issue-note', describeTarget(target));
+        const [target, labels] = await Promise.all([githubLogger.prepare(issue.id), labelsForIssue(issue.id)]);
+        const labelText = labels.length ? ` Labels: ${labels.join(', ')}.` : ' No labels.';
+        if ($('issue-select').value === issue.id) setNote('issue-note', describeTarget(target) + labelText);
     } catch (error) {
         console.error(error);
         setNote('issue-note', `Couldn't read the issue: ${error.message}`);
     }
+}
+
+// Cached per issue for the page's lifetime.
+async function labelsForIssue(issueId) {
+    if (!issueLabels.has(issueId)) issueLabels.set(issueId, await fetchIssueLabels(githubApi, issueId));
+    return issueLabels.get(issueId);
 }
 
 function showNewIssueForm() {
@@ -403,40 +822,41 @@ function showNewIssueForm() {
         }
         repoSelect.replaceChildren(...repos.map(r => new Option(r.name, r.id)));
         repoSelect.value = defaultRepoId(issues, repos) ?? '';
-        $('new-issue-repo-group').hidden = false;
+        $('new-issue-repo').hidden = false;
         loadCreateInfo(repoSelect.value);
     } else {
-        $('new-issue-repo-group').hidden = true;
+        $('new-issue-repo').hidden = true;
         loadCreateInfo(choice.id);
     }
+    $('new-issue-dialog').showModal();
     $('new-issue-title').focus();
 }
 
 // Fills type, epic and estimate for the chosen repo. Personal repos have none of them.
 async function loadCreateInfo(repoId) {
     createInfo = null;
-    for (const group of ['new-issue-type-group', 'new-issue-epic-group', 'new-issue-estimate-group']) {
-        $(group).hidden = true;
+    for (const id of ['new-issue-type', 'new-issue-epic', 'new-issue-estimate']) {
+        $(id).hidden = true;
     }
     if (!repoId) return;
     try {
         const info = await githubApi.getRepoCreateInfo(repoId, CREATED_LABEL.name);
         const epics = info.org ? await githubApi.listOrgEpics(info.org) : [];
-        if (!$('new-issue-form').hidden && currentNewIssueRepo() !== repoId) return;  // repo changed meanwhile
+        if ($('new-issue-dialog').open && currentNewIssueRepo() !== repoId) return;  // repo changed meanwhile
         createInfo = { ...info, epics };
 
         if (info.issueTypes.length) {
             $('new-issue-type').replaceChildren(...info.issueTypes.map(t => new Option(t.name, t.id)));
             const task = info.issueTypes.find(t => t.name === DEFAULT_ISSUE_TYPE);
             if (task) $('new-issue-type').value = task.id;
-            $('new-issue-type-group').hidden = false;
+            $('new-issue-type').hidden = false;
         }
         if (info.org) {
-            $('new-issue-epic').replaceChildren(new Option('-- No epic --', ''),
-                ...epics.map(e => new Option(issueLabel(e), e.id)));
-            $('new-issue-epic-group').hidden = false;
+            $('new-issue-epic').replaceChildren(new Option('No epic', ''),
+                ...epics.map(e => endFirst(issueLabel(e), e.id)));
+            $('new-issue-epic').hidden = false;
         }
-        $('new-issue-estimate-group').hidden = !estimateField();
+        $('new-issue-estimate').hidden = !estimateField();
     } catch (error) {
         console.error(error);
         setNote('new-issue-status', `Couldn't load repo details: ${error.message}`);
@@ -479,8 +899,8 @@ async function createIssue() {
         const issue = await githubApi.createIssue({
             repoId: createInfo.repoId,
             title,
-            issueTypeId: $('new-issue-type-group').hidden ? null : $('new-issue-type').value,
-            parentIssueId: $('new-issue-epic-group').hidden ? null : $('new-issue-epic').value,
+            issueTypeId: $('new-issue-type').hidden ? null : $('new-issue-type').value,
+            parentIssueId: $('new-issue-epic').hidden ? null : ($('new-issue-epic').value || null),
             projectId: choice.kind === 'project' ? choice.id : null,
             labelIds: [await ensureCreatedLabel()],
             assigneeIds: github.viewer ? [github.viewer.id] : [],
@@ -489,6 +909,7 @@ async function createIssue() {
         const key = $('project-select').value;
         github.issues.set(key, [issue, ...(github.issues.get(key) ?? [])]);
         renderIssueOptions(issue.id);
+        $('new-issue-dialog').close();
     } catch (error) {
         console.error(error);
         setNote('new-issue-status', `Couldn't create the issue: ${error.message}`);
@@ -531,30 +952,118 @@ async function logToGithub(issue, hours) {
     }
 }
 
+// --- task VIEW: the GitHub issue, or the local task's details ---
+
+function issueUrl(issue) {
+    return `https://github.com/${issue.repo}/issues/${issue.number}`;
+}
+
+function renderTaskView() {
+    const usesIssues = parseProjectChoice($('project-select').value).kind !== 'none';
+    $('task-view-button').disabled = usesIssues && !selectedIssue();
+}
+
+function viewTask() {
+    if (parseProjectChoice($('project-select').value).kind !== 'none') {
+        const issue = selectedIssue();
+        if (issue) window.open(issueUrl(issue), '_blank', 'noopener');
+        return;
+    }
+    $('task-title').value = $('project-input').value;
+    $('task-dialog').showModal();
+    $('task-title').focus();
+}
+
+// Closes on Esc (built in) and on a click outside the dialog's box. A click
+// on the backdrop has the dialog itself as its target.
+function lightDismiss(dialog, canClose = () => true) {
+    dialog.addEventListener('click', (e) => {
+        if (e.target !== dialog || !canClose()) return;
+        const r = dialog.getBoundingClientRect();
+        const inside = e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
+        if (!inside) dialog.close();
+    });
+}
+
 // --- tracked session ---
+
+let sessionTarget = null;  // chooseLogTarget() at start, plus the labels typed
+
+// "Logging to: X · labels: a, b" (#20). `before` words it for a session not started yet.
+function loggingText(target, before = false) {
+    if (!target) return 'Choose an issue on the home screen, or No Project.';
+    if (!target.label) return before ? 'Not logging: no task title set.' : 'Not logging (no task title).';
+    const labels = target.issue ? (issueLabels.get(target.issue.id) ?? []) : (target.labels ?? []);
+    return `${before ? 'Will log to' : 'Logging to'}: ${target.label}${labels.length ? ` · labels: ${labels.join(', ')}` : ''}`;
+}
+
+function buildControls() {
+    for (const container of document.querySelectorAll('[data-controls]')) {
+        container.replaceChildren(...CONTROLS.map(({ action, label, title }) => {
+            const button = el('button', '', label);
+            button.dataset.action = action;
+            button.title = title;
+            button.setAttribute('aria-label', title);
+            button.addEventListener('click', () => control(action));
+            return button;
+        }));
+    }
+}
+
+function renderControls() {
+    for (const button of document.querySelectorAll('[data-action="toggle"]')) {
+        button.textContent = playing ? '⏸︎' : '▶︎';
+        button.title = playing ? 'Pause' : 'Resume';
+        button.setAttribute('aria-label', button.title);
+    }
+}
+
+function control(action) {
+    if (!isRunning()) return;
+    if (action === 'toggle') (playing ? playback.pause() : playback.resume()).catch(console.error);
+    else if (action === 'stop') stopSession();
+    else if (action === 'next') playback.next().catch(console.error);
+    else if (action === 'prev') playback.previous().catch(console.error);
+}
 
 // Runs inside the click handler with nothing awaited before playback.play(),
 // so the browser counts the audio as user-initiated.
-function startSession() {
+function startSession(playlistId) {
+    const playlist = playlists.get(playlistId);
+    if (!playlist || !playerReady || isRunning()) return;
     const target = chooseLogTarget();
     if (!target) {
         alert('Choose an issue (or create one) first, or pick No Project.');
         return;
     }
+    if (!target.issue) target.labels = parseLabels($('labels-input').value);
     session = createSession({ project: target.label, logger: sessionLogger(target.issue) });
+    sessionTarget = target;
     sessionLabel = target.label;
-    sessionTracks = preview.tracks;
+    sessionPlaylistId = playlist.id;
+    sessionLabels = target.issue
+        ? (issueLabels.get(target.issue.id) ?? null)  // fetched below if not loaded yet
+        : target.labels;
+    sessionTracks = playlist.tracks;
+    runningId = playlist.id;
     current = { index: -1, startedAtMs: 0 };
     playing = false;
 
-    $('session-project').textContent = target.label || 'No project (not logging)';
+    $('running-task').textContent = loggingText(target);
+    $('running-playlist').textContent = playlist.name;
     $('session-github').textContent = '';
-    $('session-track-name').textContent = 'Starting…';
-    $('session-track-artist').textContent = '';
-    $('session-controls').hidden = false;
+    for (const id of ['session-track-name', 'now-track-name']) $(id).textContent = 'Starting…';
+    for (const id of ['session-track-artist', 'now-track-artist']) $(id).textContent = '';
+    // Keep the panel the same height while it swaps setup for the summary.
+    $('pomo-running').style.minHeight = `${$('pomo-setup').offsetHeight}px`;
+    $('pomo-setup').hidden = true;
+    $('pomo-running').hidden = false;
+    $('running-info').hidden = false;
     $('session-done').hidden = true;
+    $('now-playing').classList.remove('parked');
+    renderControls();
     renderSession();
-    showSection('session-section');
+    if (viewedId) renderPlaylistScreen();
     ticker = setInterval(renderSession, 500);
 
     playback.play(sessionTracks).catch((error) => {
@@ -564,19 +1073,50 @@ function startSession() {
     });
     // After play(), so nothing is awaited before it. Readies a one-write log for pagehide.
     if (target.issue) githubLogger.prepare(target.issue.id).catch(console.error);
+    if (sessionLabels === null) {
+        sessionLabels = labelsForIssue(target.issue.id).catch((error) => {
+            console.error(error);
+            return [];
+        });
+    }
+}
+
+// Counts the session's labels against its playlist, if anything played.
+// Synchronous when the labels are already known, so it works on pagehide.
+function recordSessionLabels() {
+    const playlistId = sessionPlaylistId;
+    const labels = sessionLabels;
+    sessionPlaylistId = null;
+    if (!playlistId || !(session.elapsedMs() > 0)) return;
+    const record = (names) => {
+        if (names.length === 0) return;
+        playlists.addLabels(playlistId, names);
+        $('session-labels').textContent = `Playlist labels +1: ${names.join(', ')}`;
+        $('session-labels').hidden = false;
+        if (viewedId === playlistId) renderPlaylistScreen();
+    };
+    if (Array.isArray(labels)) record(labels);
+    else labels?.then(record);
+}
+
+function finishSession() {
+    const hours = session.finish();
+    recordSessionLabels();
+    return hours;
 }
 
 function onPlaybackChange(change) {
-    if (!session || session.isFinished()) return;
+    if (!isRunning()) return;
     session.setPlaying(change.playing);
     playing = change.playing;
-    $('pause-button').textContent = playing ? 'PAUSE' : 'RESUME';
+    renderControls();
 
     if (change.trackIndex !== current.index && change.trackIndex >= 0) {
         current = { index: change.trackIndex, startedAtMs: session.elapsedMs() };
         const track = sessionTracks[change.trackIndex];
-        $('session-track-name').textContent = track.name;
-        $('session-track-artist').textContent = track.artist;
+        for (const id of ['session-track-name', 'now-track-name']) $(id).textContent = track.name;
+        for (const id of ['session-track-artist', 'now-track-artist']) $(id).textContent = track.artist;
+        if (viewedId === runningId) renderPlaylistScreen();
     }
 
     if (change.ended) endSession();
@@ -586,11 +1126,11 @@ function onPlaybackChange(change) {
 function renderSession() {
     if (!session) return;
     const elapsed = session.elapsedMs();
-    $('session-elapsed').textContent = formatClock(elapsed);
     if (current.index >= 0) {
+        const total = totalMs(sessionTracks);
         const left = remainingMs(sessionTracks, current.index, elapsed - current.startedAtMs);
         $('session-progress').textContent =
-            `Track ${current.index + 1} of ${sessionTracks.length} · ${Math.ceil(left / 60000)} min left`;
+            `Track ${current.index + 1} of ${sessionTracks.length} · ${formatClock(total - left)} / ${formatClock(total)}`;
     } else {
         $('session-progress').textContent = '';
     }
@@ -598,24 +1138,23 @@ function renderSession() {
 
 // Safe to call more than once: session.finish() only logs the first time.
 function endSession() {
-    if (!session || session.isFinished()) return;
+    if (!isRunning()) return;
     renderSession();
     const project = sessionLabel;
-    const hours = session.finish();
+    $('session-labels').hidden = true;
+    const hours = finishSession();
     clearInterval(ticker);
     ticker = null;
 
-    $('session-controls').hidden = true;
+    $('running-info').hidden = true;
     $('session-done').hidden = false;
-    $('session-progress').textContent = '';
+    $('now-playing').classList.add('parked');
     $('session-summary').textContent = hours > 0
         ? `Logged ${hours.toFixed(2)} h to ${project}.`
-        : project ? 'Nothing played, so nothing was logged.' : 'No project, so nothing was logged.';
+        : project ? 'Nothing played, so nothing was logged.' : 'No task title, so nothing was logged.';
     renderTotals();
-}
-
-function togglePause() {
-    (playing ? playback.pause() : playback.resume()).catch(console.error);
+    renderStartButtons();
+    if (viewedId) renderPlaylistScreen();
 }
 
 function stopSession() {
@@ -623,67 +1162,152 @@ function stopSession() {
     playback.stop().catch(console.error);
 }
 
+function closeSession() {
+    $('pomo-running').hidden = true;
+    $('pomo-setup').hidden = false;
+}
+
+// --- Settings popup ---
+
+function openSettings() {
+    renderGithubSettings();
+    $('spotify-status').textContent = me ? `Logged in as ${me.display_name || me.id}.` : 'Logged in.';
+    setNote('playlists-status', '');
+    $('settings-dialog').showModal();
+}
+
+function logout() {
+    auth.logout();
+    window.location.reload();
+}
+
 // --- setup ---
 
+// Connects the Web Playback SDK once, before any click, so Start can play
+// inside the click handler. Premium only.
 async function setUpPlayer() {
-    let premium = false;
+    if (playerReady || playerStarting) return;
+    playerStarting = true;
     try {
-        premium = (await api.getMe()).product === 'premium';
+        me = await api.getMe();
     } catch (error) {
         console.error(error);
     }
-    $('premium-note').hidden = premium;
-    if (!premium) return;
-
+    // #7: Spotify is removing `product` from /me; until the check moves to
+    // handling PREMIUM_REQUIRED, a missing field still counts as not Premium.
+    if (me?.product !== 'premium') {
+        setNote('player-note', 'Tracked sessions need Spotify Premium.');
+        playerStarting = false;
+        return;
+    }
+    setNote('player-note', 'Connecting to Spotify…');
     try {
         await playback.init();
         playerReady = true;
-        $('start-button').disabled = false;
+        setNote('player-note', '');
     } catch (error) {
         console.error('Spotify player failed to start:', error);
-        $('premium-note').textContent = `Playback unavailable: ${error.message}`;
-        $('premium-note').hidden = false;
+        setNote('player-note', `Playback unavailable: ${error.message}`);
+    } finally {
+        playerStarting = false;
+        renderStartButtons();
     }
 }
 
 function wireEvents() {
-    $('login-button').addEventListener('click', () => auth.login());
-    $('logout-button').addEventListener('click', () => {
-        auth.logout();
-        window.location.reload();
+    const on = (id, event, fn) => $(id).addEventListener(event, fn);
+    const click = (id, fn) => on(id, 'click', fn);
+    const enter = (id, fn) => on(id, 'keydown', (e) => { if (e.key === 'Enter') fn(); });
+
+    click('login-button', () => auth.login());
+
+    // Pomodoro
+    on('replay-select', 'change', onPlaylistChoice);
+    click('view-button', () => { if (selectedId) openPlaylist(selectedId); });
+    click('start-button', () => startSession(selectedId));
+    click('new-session-button', closeSession);
+    click('running-playlist', () => { if (runningId) openPlaylist(runningId); });
+    click('running-stop-button', stopSession);
+    on('project-select', 'change', onProjectChange);
+    on('issue-select', 'change', onIssueChange);
+    on('new-issue-repo', 'change', () => loadCreateInfo($('new-issue-repo').value));
+    click('create-issue-button', createIssue);
+    click('new-issue-cancel-button', () => $('new-issue-dialog').close());
+    // Closing without creating leaves "+ New issue" unselected again.
+    on('new-issue-dialog', 'close', () => {
+        if ($('issue-select').value === NEW_ISSUE) {
+            $('issue-select').value = '';
+            onIssueChange();
+        }
     });
-    $('generate-button').addEventListener('click', generate);
-    $('search-input').addEventListener('keypress', (e) => { if (e.key === 'Enter') generate(); });
-    $('back-button').addEventListener('click', () => showSection('playlist-section'));
-    $('regenerate-button').addEventListener('click', generate);
-    $('start-button').addEventListener('click', () => { if (playerReady && preview) startSession(); });
-    $('save-button').addEventListener('click', save);
-    $('pause-button').addEventListener('click', togglePause);
-    $('stop-button').addEventListener('click', stopSession);
-    $('new-session-button').addEventListener('click', () => showSection('playlist-section'));
-    $('create-another-button').addEventListener('click', () => showSection('playlist-section'));
-    $('replay-select').addEventListener('change', replay);
-    $('export-json-button').addEventListener('click', () =>
-        download('pomodorify-hours.json', totalsToJson(logger.getTotals()), 'application/json'));
-    $('export-csv-button').addEventListener('click', () =>
-        download('pomodorify-hours.csv', totalsToCsv(logger.getTotals()), 'text/csv'));
-    $('clear-totals-button').addEventListener('click', clearTotals);
+    click('task-view-button', viewTask);
+    click('task-done-button', () => $('task-dialog').close());
+    on('task-dialog', 'close', () => { $('project-input').value = $('task-title').value.trim(); });
+    enter('task-title', () => $('task-dialog').close());
+    enter('labels-input', () => $('task-dialog').close());
+
+    // Playlist screen
+    click('playlist-back-button', () => {
+        viewedId = null;
+        showScreen('home-screen');
+    });
+    click('rename-button', renamePlaylist);
+    enter('playlist-name', renamePlaylist);
+    click('playlist-start-button', () => startSession(viewedId));
+    click('delete-button', deletePlaylist);
+    click('save-spotify-button', saveToSpotify);
+
+    // Create panel and its popups
+    click('search-open-button', openSearch);
+    click('search-cancel-button', () => $('search-dialog').close());
+    click('search-create-button', createSearch);
+    enter('search-input', createSearch);
+    on('search-min', 'input', () => syncSliders($('search-min')));
+    on('search-max', 'input', () => syncSliders($('search-max')));
+    click('source-open-button', openSource);
+    click('source-cancel-button', () => $('source-dialog').close());
+    click('source-create-button', createFromSource);
+    click('build-open-button', openBuild);
+    click('build-cancel-button', () => $('build-dialog').close());
+    click('build-create-button', createBuild);
+    click('build-close-button', () => $('build-dialog').close());
+    click('build-show-button', showBuilt);
+    // Esc closes a dialog; don't let it while a build is running.
+    on('build-dialog', 'cancel', (e) => { if ($('build-close-button').disabled && !$('build-output').hidden) e.preventDefault(); });
+
+    // Tasks panel and its popups
+    click('export-open-button', openExport);
+    click('export-cancel-button', () => $('export-dialog').close());
+    click('export-download-button', exportTotals);
+    click('clear-open-button', openClear);
+    click('clear-cancel-button', () => $('clear-dialog').close());
+    click('clear-confirm-button', clearTotals);
+
+    // Settings
+    click('settings-open-button', openSettings);
+    click('settings-close-button', () => $('settings-dialog').close());
+    click('github-save-button', saveGithubSettings);
+    click('github-clear-button', removeGithubToken);
+    click('logout-button', logout);
+    click('export-playlists-button', exportPlaylists);
+    click('import-playlists-button', () => $('import-playlists-file').click());
+    on('import-playlists-file', 'change', importPlaylists);
+
+    for (const dialog of document.querySelectorAll('dialog')) {
+        lightDismiss(dialog, dialog.id === 'build-dialog' ? () => !$('build-close-button').disabled || $('build-output').hidden : undefined);
+    }
+
     playback.onStateChange(onPlaybackChange);
     // Closing the tab mid-session still logs the time played so far.
     window.addEventListener('pagehide', () => {
         pageHiding = true;
-        if (session && !session.isFinished()) session.finish();
+        if (isRunning()) finishSession();
     });
-    $('project-select').addEventListener('change', onProjectChange);
-    $('issue-select').addEventListener('change', onIssueChange);
-    $('new-issue-repo').addEventListener('change', () => loadCreateInfo($('new-issue-repo').value));
-    $('create-issue-button').addEventListener('click', createIssue);
-    $('github-save-button').addEventListener('click', saveGithubSettings);
-    $('github-clear-button').addEventListener('click', removeGithubToken);
 }
 
 async function boot() {
     setRandomBackground();
+    buildControls();
     wireEvents();
 
     try {
@@ -698,13 +1322,14 @@ async function boot() {
     if (!auth.isLoggedIn()) {
         // A token without the needed scopes (e.g. from before `streaming` was added).
         if (localStorage.getItem(STORAGE_KEYS.access)) $('login-note').hidden = false;
-        showSection('login-section');
+        showScreen('login-screen');
         return;
     }
 
-    showSection('playlist-section');
+    showScreen('home-screen');
     renderTotals();
-    loadPlaylists();
+    renderPlaylists();
+    loadSpotifyPlaylists();
     setUpPlayer();
     loadGithub();
 }

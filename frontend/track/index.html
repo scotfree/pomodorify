@@ -4,175 +4,296 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Pomodorify Track</title>
-    <link rel="icon" type="image/png" href="../pomodorify_icon.png">
+    <link rel="icon" type="image/png" href="icons/tomato.png">
     <link rel="stylesheet" href="../style.css">
     <link rel="stylesheet" href="track.css">
 </head>
 <body>
     <div id="bg"></div>
     <div class="container">
-        <h1>Pomodorify</h1>
+        <header class="brand">
+            <img class="logo" src="icons/tomato.png" alt="">
+            <h1>Pomodorify <span class="badge">track</span></h1>
+        </header>
 
-        <div id="login-section">
-            <p id="login-note" hidden>Tracked sessions need playback permission. Please log in again.</p>
-            <button id="login-button">Log in with Spotify</button>
+        <!-- Not logged in to Spotify -->
+        <div id="login-screen" hidden>
+            <p id="login-note" class="note" hidden>Tracked sessions need playback permission. Please log in again.</p>
+            <button id="login-button">LOG IN WITH SPOTIFY</button>
         </div>
 
-        <div id="playlist-section" style="display: none;">
-            <h2>Build a session playlist.</h2>
-            <div class="playlist-selection-frame">
-                <select id="playlist-select"><option value="">Loading playlists...</option></select>
-            </div>
-            <div class="search-row">
-                <div class="search-input-frame">
-                    <input type="text" id="search-input" placeholder="or use a search...">
+        <div id="home-screen" hidden>
+            <!-- 1. Pomodoro: pick a playlist and a task, start, control -->
+            <section class="panel" id="pomo-panel">
+                <h2 class="panel-head"><img class="icon" src="icons/tomato.png" alt="">Pomodoro time tracking</h2>
+
+                <div id="pomo-setup">
+                    <div class="inline-row">
+                        <select id="replay-select" class="end-first" aria-label="Playlist"></select>
+                        <button id="view-button" class="back-button">VIEW</button>
+                    </div>
+
+                    <div class="inline-row" id="task-row">
+                        <select id="project-select" class="end-first" aria-label="Project">
+                            <option value="none">No project</option>
+                            <optgroup label="Projects" id="project-options"></optgroup>
+                            <optgroup label="Repos" id="repo-options"></optgroup>
+                        </select>
+                        <input type="text" id="project-input" list="project-list" placeholder="Task" aria-label="Task">
+                        <datalist id="project-list"></datalist>
+                        <select id="issue-select" class="end-first" aria-label="Issue" hidden></select>
+                        <button id="task-view-button" class="back-button">VIEW</button>
+                    </div>
+                    <p id="github-note" class="note" hidden></p>
+                    <p id="issue-note" class="note" hidden></p>
+                    <p id="player-note" class="note" hidden></p>
+
+                    <button id="start-button" class="start-button" disabled>START</button>
                 </div>
-            </div>
-            <div class="form-group">
-                <label for="duration">Duration (minutes):</label>
-                <input type="number" id="duration" value="25" min="1" max="120">
-            </div>
-            <button id="generate-button">Generate Playlist</button>
 
-            <div class="form-group replay" id="replay-group" hidden>
-                <label for="replay-select">Replay a saved session:</label>
-                <select id="replay-select"></select>
-            </div>
+                <!-- While a session runs (and right after it ends). Same height as
+                     the setup above, so the panel doesn't jump. -->
+                <div id="pomo-running" hidden>
+                    <div id="running-info">
+                        <p class="logging-to" id="running-task"></p>
+                        <button id="running-playlist" class="link-button" title="View the playlist"></button>
+                        <div class="session-now">
+                            <div class="track-name" id="session-track-name">Starting…</div>
+                            <div class="track-artist" id="session-track-artist"></div>
+                        </div>
+                        <p class="session-progress" id="session-progress"></p>
+                        <button id="running-stop-button" class="back-button">STOP</button>
+                    </div>
+                    <div id="session-done" hidden>
+                        <p id="session-summary"></p>
+                        <p id="session-labels" class="note" hidden></p>
+                        <p id="session-github" class="note"></p>
+                        <button id="new-session-button">DONE</button>
+                    </div>
+                </div>
+            </section>
 
-            <div class="totals" id="totals" hidden>
-                <h3>Logged time</h3>
-                <table>
-                    <thead><tr><th>Project</th><th>Hours</th></tr></thead>
-                    <tbody id="totals-body"></tbody>
-                </table>
+            <!-- 2. Create playlists -->
+            <section class="panel">
+                <h2 class="panel-head"><img class="icon" src="icons/pencil.png" alt="">Create pomodoro playlists</h2>
+                <div class="inline-row settings-row">
+                    <label class="minutes"><input type="number" id="duration" value="25" min="1" max="120" aria-label="Minutes"> min</label>
+                    <label class="toggle"><input type="checkbox" id="opt-live"> Live</label>
+                    <label class="toggle"><input type="checkbox" id="opt-covers"> Covers</label>
+                </div>
+                <div class="button-group sources">
+                    <button id="search-open-button">SEARCH</button>
+                    <button id="source-open-button" class="back-button">PLAYLIST</button>
+                    <button id="build-open-button" class="list-button">LIST</button>
+                </div>
+            </section>
+
+            <!-- 3. Tasks: logged time -->
+            <section class="panel">
+                <h2 class="panel-head"><img class="icon" src="icons/checkbox.png" alt="">Current tasks</h2>
+                <div class="totals-scroll">
+                    <table class="totals-table">
+                        <thead><tr><th>Task</th><th>Hours</th></tr></thead>
+                        <tbody id="totals-body"></tbody>
+                    </table>
+                    <p class="note" id="totals-empty">Nothing logged yet.</p>
+                </div>
                 <div class="button-group">
-                    <button id="export-json-button">EXPORT JSON</button>
-                    <button id="export-csv-button">EXPORT CSV</button>
-                    <button id="clear-totals-button" class="back-button">CLEAR</button>
+                    <button id="export-open-button">EXPORT</button>
+                    <button id="clear-open-button" class="back-button">CLEAR</button>
                 </div>
-            </div>
+            </section>
 
-            <details class="github-settings">
-                <summary>GitHub (log time to issues)</summary>
-                <p class="note" id="github-status"></p>
-                <div class="form-group">
-                    <label for="github-token">Token (classic, scopes: repo, project, read:org):</label>
-                    <input type="password" id="github-token" autocomplete="off" placeholder="ghp_…">
-                </div>
-                <div class="form-group">
-                    <label for="github-fields">Hours fields, tried in order:</label>
-                    <input type="text" id="github-fields">
-                </div>
-                <div class="button-group">
-                    <button id="github-save-button">SAVE</button>
-                    <button id="github-clear-button" class="back-button">REMOVE TOKEN</button>
-                </div>
-            </details>
-
-            <div style="margin-top: 1rem;">
-                <button id="logout-button">Logout</button>
-            </div>
+            <!-- 4. Settings -->
+            <section class="panel">
+                <button class="panel-head panel-button" id="settings-open-button">
+                    <img class="icon" src="icons/gear.png" alt="">Settings
+                </button>
+            </section>
         </div>
 
-        <div id="preview-section" style="display: none;">
-            <h2>Preview Playlist</h2>
+        <!-- A saved playlist -->
+        <div id="playlist-screen" hidden>
+            <button id="playlist-back-button" class="back-button back-link">◀ BACK</button>
+            <div class="inline-row">
+                <input type="text" id="playlist-name" aria-label="Playlist name" placeholder="Name">
+                <button id="rename-button" class="back-button">RENAME</button>
+            </div>
             <div class="playlist-info">
-                <p>Source: <span id="preview-source-name"></span></p>
-                <p>Duration: <span id="preview-duration"></span></p>
-                <p>Number of tracks: <span id="preview-track-count"></span></p>
+                <p>Source: <span id="playlist-source"></span></p>
+                <p>Length: <span id="playlist-length"></span> · <span id="playlist-count"></span> tracks</p>
+                <p id="playlist-labels" hidden>Labels: <span id="playlist-labels-list"></span></p>
             </div>
-            <div class="track-list" id="preview-tracks"></div>
-
-            <div class="form-group">
-                <label for="project-select">Project:</label>
-                <select id="project-select">
-                    <option value="none">No Project</option>
-                    <optgroup label="Projects" id="project-options"></optgroup>
-                    <optgroup label="Repos" id="repo-options"></optgroup>
-                </select>
-                <p id="github-note" class="note" hidden></p>
+            <div class="track-list" id="playlist-tracks"></div>
+            <p class="logging-to" id="playlist-task"></p>
+            <div class="button-group" id="playlist-actions">
+                <button id="playlist-start-button" class="start-button" disabled>START</button>
+                <button id="delete-button" class="back-button">DELETE</button>
             </div>
-
-            <div class="form-group" id="title-group">
-                <label for="project-input">Title (optional, for logging time locally):</label>
-                <input type="text" id="project-input" list="project-list" placeholder="No title: time isn't logged">
-                <datalist id="project-list"></datalist>
-            </div>
-
-            <div class="form-group" id="issue-group" hidden>
-                <label for="issue-select">Issue:</label>
-                <select id="issue-select"></select>
-                <p id="issue-note" class="note" hidden></p>
-            </div>
-
-            <div class="new-issue" id="new-issue-form" hidden>
-                <div class="form-group" id="new-issue-repo-group" hidden>
-                    <label for="new-issue-repo">Repo:</label>
-                    <select id="new-issue-repo"></select>
-                </div>
-                <div class="form-group">
-                    <label for="new-issue-title">Title:</label>
-                    <input type="text" id="new-issue-title">
-                </div>
-                <div class="form-group" id="new-issue-type-group" hidden>
-                    <label for="new-issue-type">Type:</label>
-                    <select id="new-issue-type"></select>
-                </div>
-                <div class="form-group" id="new-issue-epic-group" hidden>
-                    <label for="new-issue-epic">Epic:</label>
-                    <select id="new-issue-epic"></select>
-                </div>
-                <div class="form-group" id="new-issue-estimate-group" hidden>
-                    <label for="new-issue-estimate">Estimated Hours:</label>
-                    <input type="number" id="new-issue-estimate" min="0" step="0.25">
-                </div>
-                <button id="create-issue-button">CREATE ISSUE</button>
-                <p id="new-issue-status" class="note" hidden></p>
-            </div>
-            <p id="premium-note" class="note" hidden>Tracked sessions need Spotify Premium.</p>
-
-            <div class="button-group">
-                <button id="back-button" class="back-button">BACK</button>
-                <button id="regenerate-button">REBUILD</button>
-                <button id="start-button" disabled>START SESSION</button>
-            </div>
-
-            <details class="export">
-                <summary>Or save it to Spotify instead (no time tracking)</summary>
-                <div class="form-group">
-                    <label for="preview-playlist-name">Playlist name:</label>
-                    <input type="text" id="preview-playlist-name">
-                </div>
-                <button id="save-button">SAVE</button>
-            </details>
+            <p class="spotify-link">
+                <button id="save-spotify-button" class="link-button">Save to Spotify (as a POMO_ playlist)</button>
+                <a id="open-spotify-link" target="_blank" rel="noopener" hidden>Open in Spotify</a>
+            </p>
         </div>
 
-        <div id="session-section" style="display: none;">
-            <h2 id="session-project"></h2>
-            <div class="session-clock" id="session-elapsed">0:00</div>
+
+        <!-- Now playing: the current track and the controls. Outside the
+             screens, so it stays at the bottom on both. Spotify plays audio only,
+             so there's no video; parked off-screen except during a session. -->
+        <section class="panel parked" id="now-playing">
+            <h2 class="panel-head"><img class="icon" src="icons/tomato.png" alt="">Now playing</h2>
             <div class="session-now">
-                <div class="track-name" id="session-track-name">Starting…</div>
-                <div class="track-artist" id="session-track-artist"></div>
+                <div class="track-name" id="now-track-name"></div>
+                <div class="track-artist" id="now-track-artist"></div>
             </div>
-            <p class="session-progress" id="session-progress"></p>
-            <div class="button-group" id="session-controls">
-                <button id="pause-button">PAUSE</button>
-                <button id="stop-button" class="back-button">STOP</button>
+            <div class="mini-controls" data-controls></div>
+        </section>
+    </div>
+
+    <dialog id="search-dialog" class="popup">
+        <h2>From search</h2>
+        <input type="text" id="search-input" placeholder="Search Spotify, e.g. lofi beats" aria-label="Search">
+        <input type="text" id="search-name" placeholder="Name (blank: from the search)" aria-label="Name">
+        <div class="sliders">
+            <label for="search-min">Shortest: <span id="search-min-value"></span> min</label>
+            <input type="range" id="search-min" min="1" max="10" step="0.5" value="2">
+            <label for="search-max">Longest: <span id="search-max-value"></span> min</label>
+            <input type="range" id="search-max" min="1" max="10" step="0.5" value="5">
+        </div>
+        <fieldset class="checks">
+            <label><input type="checkbox" id="opt-instrumental"> Instrumental</label>
+            <label><input type="checkbox" id="opt-explicit" checked> Allow explicit</label>
+        </fieldset>
+        <p class="note" id="search-shared"></p>
+        <p class="note" id="search-status" hidden></p>
+        <div class="button-group">
+            <button id="search-cancel-button" class="back-button">CANCEL</button>
+            <button id="search-create-button">CREATE</button>
+        </div>
+    </dialog>
+
+    <dialog id="source-dialog" class="popup">
+        <h2>From playlist</h2>
+        <select id="source-select" class="end-first" aria-label="Your Spotify playlist"></select>
+        <input type="text" id="source-name" placeholder="Name (blank: from the playlist)" aria-label="Name">
+        <p class="note" id="source-shared"></p>
+        <p class="note" id="source-status" hidden></p>
+        <div class="button-group">
+            <button id="source-cancel-button" class="back-button">CANCEL</button>
+            <button id="source-create-button">CREATE</button>
+        </div>
+    </dialog>
+
+    <dialog id="build-dialog" class="popup">
+        <h2>From list</h2>
+        <div id="build-input">
+            <input type="text" id="build-title" placeholder="Name" aria-label="Name">
+            <textarea id="build-lines" rows="12" spellcheck="false" aria-label="Songs, one per line"
+                placeholder="Songs, one per line. Artist helps; Spotify track links work.&#10;&#10;Johnny Cash - Hurt&#10;Nina Simone - Feeling Good&#10;https://open.spotify.com/track/…"></textarea>
+            <p class="note" id="build-duration-note"></p>
+            <div class="button-group">
+                <button id="build-cancel-button" class="back-button">CANCEL</button>
+                <button id="build-create-button">CREATE</button>
             </div>
-            <div id="session-done" hidden>
-                <p id="session-summary"></p>
-                <p id="session-github" class="note"></p>
-                <button id="new-session-button">New Session</button>
+        </div>
+        <div id="build-output" hidden>
+            <p class="note" id="build-status"></p>
+            <ol class="build-log" id="build-log"></ol>
+            <div class="build-result" id="build-result" hidden></div>
+            <div class="button-group">
+                <button id="build-close-button" class="back-button">CLOSE</button>
+                <button id="build-show-button" hidden>VIEW</button>
             </div>
+        </div>
+    </dialog>
+
+    <dialog id="task-dialog" class="popup">
+        <h2>Task</h2>
+        <input type="text" id="task-title" list="project-list" placeholder="Task (blank: time isn't logged)" aria-label="Task">
+        <input type="text" id="labels-input" placeholder="Labels, comma-separated" aria-label="Labels">
+        <div class="button-group">
+            <button id="task-done-button">DONE</button>
+        </div>
+    </dialog>
+
+    <dialog id="new-issue-dialog" class="popup">
+        <h2>New issue</h2>
+        <select id="new-issue-repo" aria-label="Repo" hidden></select>
+        <input type="text" id="new-issue-title" placeholder="Title" aria-label="Title">
+        <div class="inline-row">
+            <select id="new-issue-type" aria-label="Type" hidden></select>
+            <select id="new-issue-epic" class="end-first" aria-label="Epic" hidden></select>
+        </div>
+        <input type="number" id="new-issue-estimate" min="0" step="0.25" placeholder="Estimated hours" aria-label="Estimated hours" hidden>
+        <p id="new-issue-status" class="note" hidden></p>
+        <div class="button-group">
+            <button id="new-issue-cancel-button" class="back-button">CANCEL</button>
+            <button id="create-issue-button">CREATE</button>
+        </div>
+    </dialog>
+
+    <dialog id="export-dialog" class="popup">
+        <h2>Export</h2>
+        <p class="note" id="export-summary"></p>
+        <fieldset class="checks">
+            <label><input type="radio" name="export-format" value="csv" checked> CSV: task, hours (2 decimals), for spreadsheets</label>
+            <label><input type="radio" name="export-format" value="json"> JSON: full precision, as a backup</label>
+        </fieldset>
+        <div class="button-group">
+            <button id="export-cancel-button" class="back-button">CANCEL</button>
+            <button id="export-download-button">DOWNLOAD</button>
+        </div>
+    </dialog>
+
+    <dialog id="clear-dialog" class="popup">
+        <h2>Clear</h2>
+        <p id="clear-summary"></p>
+        <p class="note">This deletes all logged time in this browser and can't be undone.
+            EXPORT first if you want a copy. Time already sent to GitHub stays there.</p>
+        <div class="button-group">
+            <button id="clear-cancel-button" class="back-button">CANCEL</button>
+            <button id="clear-confirm-button" class="danger-button">DELETE</button>
+        </div>
+    </dialog>
+
+    <dialog id="settings-dialog" class="popup">
+        <h2>Settings</h2>
+
+        <h3>GitHub</h3>
+        <p class="note" id="github-status"></p>
+        <div class="form-group">
+            <label for="github-token">Token (classic: repo, project, read:org):</label>
+            <input type="password" id="github-token" autocomplete="off" placeholder="ghp_…">
+        </div>
+        <div class="form-group">
+            <label for="github-fields">Hours fields, in order:</label>
+            <input type="text" id="github-fields">
+        </div>
+        <div class="button-group">
+            <button id="github-save-button">SAVE</button>
+            <button id="github-clear-button" class="back-button">REMOVE</button>
         </div>
 
-        <div id="result-section" style="display: none;">
-            <h2>Playlist Created!</h2>
-            <p>Your new playlist has been created successfully.</p>
-            <a id="playlist-link" href="#" target="_blank">Open in Spotify</a>
-            <button id="create-another-button">Create Another Playlist</button>
+        <h3>Spotify</h3>
+        <p class="note" id="spotify-status"></p>
+        <div class="button-group">
+            <button id="logout-button" class="back-button">LOG OUT</button>
         </div>
-    </div>
+
+        <h3>Playlists file</h3>
+        <p class="note">Back up your playlists, or move them to another browser.</p>
+        <p class="note" id="playlists-status" hidden></p>
+        <div class="button-group">
+            <button id="export-playlists-button">SAVE FILE</button>
+            <button id="import-playlists-button" class="back-button">LOAD FILE</button>
+        </div>
+        <input type="file" id="import-playlists-file" accept="application/json,.json" hidden>
+
+        <div class="button-group">
+            <button id="settings-close-button" class="back-button">CLOSE</button>
+        </div>
+    </dialog>
+
     <script type="module" src="track.js"></script>
 </body>
 </html>

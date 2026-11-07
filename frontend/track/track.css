@@ -1,4 +1,6 @@
-/* Track app additions on top of ../style.css. */
+/* Track app styles on top of ../style.css. Copied from ../spotless/spotless.css
+   (not linked: the apps don't share each other's files), plus the Spotify-only
+   bits at the end. */
 
 /* style.css sets `display` on some classes (e.g. .button-group: flex), which
    would otherwise override the `hidden` attribute. */
@@ -6,12 +8,13 @@
     display: none !important;
 }
 
-#start-button {
-    background: #1db954;
-}
-
-#start-button:hover:not(:disabled) {
-    background: #1ed760;
+.badge {
+    font-size: 0.9rem;
+    font-weight: 600;
+    vertical-align: middle;
+    padding: 0.15rem 0.5rem;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.2);
 }
 
 .note {
@@ -19,15 +22,20 @@
     opacity: 0.8;
 }
 
-.export {
-    margin-top: 1.5rem;
-    text-align: left;
+.name-row {
+    display: flex;
+    gap: 0.5rem;
+    align-items: stretch;
 }
 
-.export summary {
-    cursor: pointer;
-    opacity: 0.8;
-    margin-bottom: 0.75rem;
+.name-row input {
+    flex: 1;
+    min-width: 0;
+}
+
+.name-row button {
+    width: auto;
+    margin: 0;
 }
 
 .session-clock {
@@ -46,12 +54,23 @@
     font-variant-numeric: tabular-nums;
 }
 
-.replay {
-    margin-top: 1.5rem;
+/* YouTube requires a visible player of at least 200x200 px while it plays. */
+#player-wrap {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 1rem;
 }
 
-.totals {
-    margin-top: 1.5rem;
+#player-wrap iframe {
+    max-width: 100%;
+    border-radius: 8px;
+}
+
+#now-playing.parked {
+    position: fixed;
+    left: -10000px;
+    top: 0;
+    width: 400px;
 }
 
 .github-settings {
@@ -73,22 +92,23 @@
     border-radius: 8px;
 }
 
-.totals table {
+.totals-table {
+    table-layout: fixed;
     width: 100%;
     border-collapse: collapse;
     margin-bottom: 0.75rem;
     font-variant-numeric: tabular-nums;
 }
 
-.totals th,
-.totals td {
+.totals-table th,
+.totals-table td {
     text-align: left;
     padding: 0.35rem 0.5rem;
     border-bottom: 1px solid rgba(255, 255, 255, 0.15);
 }
 
-.totals th:last-child,
-.totals td:last-child {
+.totals-table th:last-child,
+.totals-table td:last-child {
     text-align: right;
 }
 
@@ -96,4 +116,531 @@
     .session-clock {
         font-size: 3rem;
     }
+}
+
+.track-name a {
+    color: inherit;
+    text-decoration: none;
+}
+
+.track-name a:hover {
+    text-decoration: underline;
+}
+
+/* --- Build from a list --- */
+
+.build-button {
+    background: linear-gradient(45deg, #8b008b, #a020a0);
+    border-color: #8b008b;
+}
+
+.popup {
+    box-sizing: border-box;
+    width: min(680px, calc(100vw - 2rem));
+    max-height: calc(100vh - 2rem);
+    padding: 1.5rem;
+    border: 2px solid #8b008b;
+    border-radius: 12px;
+    background: rgba(25, 25, 35, 0.97);
+    color: #e6e6fa;
+    font-family: 'Orbitron', monospace;
+    box-shadow: 0 0 30px rgba(139, 0, 139, 0.6);
+    text-align: center;
+}
+
+.popup::backdrop {
+    background: rgba(10, 10, 20, 0.6);
+    backdrop-filter: blur(3px);
+}
+
+.popup input:not([type="checkbox"]):not([type="radio"]) {
+    max-width: none;
+    box-sizing: border-box;
+}
+
+.popup textarea {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 0.75rem;
+    border: 2px solid #8b008b;
+    border-radius: 8px;
+    background: rgba(25, 25, 35, 0.9);
+    color: #e6e6fa;
+    font-family: ui-monospace, Menlo, monospace;
+    font-size: 0.9rem;
+    line-height: 1.4;
+    resize: vertical;
+}
+
+.popup textarea:focus {
+    outline: none;
+    box-shadow: 0 0 20px #8b008b;
+}
+
+.build-log {
+    text-align: left;
+    padding-left: 1.5rem;
+    margin: 0 0 1rem;
+    font-size: 0.85rem;
+    line-height: 1.5;
+}
+
+.build-log li {
+    margin-bottom: 0.75rem;
+}
+
+.build-log .line {
+    font-weight: 700;
+}
+
+.build-log ul {
+    list-style: none;
+    padding-left: 0.5rem;
+    margin: 0.15rem 0 0;
+}
+
+.build-log .skip,
+.build-log .muted {
+    opacity: 0.65;
+}
+
+.build-log .fail {
+    color: #ff8a80;
+}
+
+.build-log code {
+    font-family: ui-monospace, Menlo, monospace;
+    background: rgba(255, 255, 255, 0.08);
+    padding: 0 0.25rem;
+    border-radius: 4px;
+}
+
+.build-log a,
+.build-result a {
+    color: #b9f6ca;
+}
+
+.build-result {
+    padding: 0.75rem;
+    margin-bottom: 1rem;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    border-radius: 8px;
+}
+
+/* --- Layout: brand, stacked panels, screens --- */
+
+.brand {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    margin-bottom: 1.5rem;
+}
+
+.brand .logo {
+    width: 64px;
+    height: 64px;
+}
+
+.brand h1 {
+    margin: 0;
+    font-size: 2rem;
+}
+
+.panel {
+    margin-bottom: 1.25rem;
+    padding: 1.25rem;
+    border: 1px solid rgba(230, 230, 250, 0.2);
+    border-radius: 12px;
+    background: rgba(25, 25, 35, 0.55);
+}
+
+.panel-head {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin: 0 0 1rem;
+    font-size: 1.3rem;
+}
+
+.panel-head .icon {
+    width: 36px;
+    height: 36px;
+}
+
+/* The Settings panel is one big button that looks like the other headers. */
+.panel-button,
+.panel-button:hover {
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    background: none;
+    border: none;
+    box-shadow: none;
+    transform: none;
+    color: #e6e6fa;
+    text-shadow: 0 0 10px #8b008b;
+    letter-spacing: 2px;
+    font-weight: 700;
+}
+
+.panel-button:hover {
+    opacity: 0.85;
+}
+
+.panel .form-group {
+    margin-bottom: 1rem;
+}
+
+.inline-row {
+    display: flex;
+    gap: 0.5rem;
+    align-items: stretch;
+    justify-content: center;
+}
+
+.inline-row select,
+.inline-row input {
+    flex: 1;
+    min-width: 0;
+    max-width: none;
+}
+
+.inline-row button {
+    margin: 0;
+    padding: 0.75rem 1.25rem;
+}
+
+.start-button {
+    width: 100%;
+    max-width: 300px;
+}
+
+.stack {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.stack button {
+    width: 100%;
+    max-width: 300px;
+}
+
+.list-button,
+.list-button:hover {
+    background: linear-gradient(45deg, #8b008b, #a020a0);
+    border-color: #8b008b;
+}
+
+.danger-button,
+.danger-button:hover {
+    background: linear-gradient(45deg, #b3261e, #d84339);
+    border-color: #b3261e;
+}
+
+.back-link {
+    display: block;
+    margin: 0 0 1rem;
+    padding: 0.6rem 1.25rem;
+}
+
+/* What the session logs to (#20). */
+.logging-to {
+    font-weight: 700;
+    margin: 0.25rem 0 0.75rem;
+}
+
+#running-info {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+#running-info p {
+    margin: 0;
+}
+
+/* The playlist's name in the running summary: text that opens the playlist. */
+.link-button,
+.link-button:hover {
+    padding: 0;
+    background: none;
+    border: none;
+    box-shadow: none;
+    transform: none;
+    color: #e6e6fa;
+    text-transform: none;
+    letter-spacing: 0;
+    font-weight: 700;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+}
+
+#running-stop-button {
+    margin-top: 0.25rem;
+    min-width: 10rem;
+}
+
+/* The only small buttons: ⏮ ⏯ ⏹ ⏭. */
+.mini-controls {
+    display: flex;
+    justify-content: center;
+    gap: 0.5rem;
+    margin: 0.75rem 0;
+}
+
+.mini-controls button {
+    width: 3rem;
+    height: 3rem;
+    padding: 0;
+    font-size: 1.2rem;
+    letter-spacing: 0;
+}
+
+.mini-controls button[data-action="stop"] {
+    background: linear-gradient(45deg, #4a90e2, #357abd);
+    border-color: #4a90e2;
+}
+
+.totals-scroll {
+    max-height: 14rem;
+    overflow-y: auto;
+    margin-bottom: 0.5rem;
+}
+
+.totals-table th:last-child,
+.totals-table td:last-child {
+    width: 4.5rem;
+}
+
+.totals-table td:first-child {
+    overflow-wrap: anywhere;
+}
+
+.totals-table thead th {
+    position: sticky;
+    top: 0;
+    background: rgba(25, 25, 35, 0.95);
+}
+
+.track-item.current {
+    background: rgba(29, 185, 84, 0.25);
+}
+
+/* --- Popups --- */
+
+.popup h3 {
+    margin: 1.5rem 0 0.5rem;
+    text-align: left;
+    font-size: 1rem;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+}
+
+.popup .form-group {
+    margin-bottom: 1rem;
+}
+
+.sliders input[type="range"] {
+    width: 100%;
+    max-width: none;
+    padding: 0;
+    border: none;
+    box-shadow: none;
+    background: transparent;
+    accent-color: #a020a0;
+    margin-bottom: 0.75rem;
+}
+
+.checks {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+    gap: 0.5rem 1rem;
+    margin: 0 0 1rem;
+    padding: 0;
+    border: none;
+    text-align: left;
+}
+
+.checks label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0;
+    text-transform: none;
+    font-weight: 400;
+    letter-spacing: 0;
+    text-shadow: none;
+}
+
+.checks input {
+    width: auto;
+    margin: 0;
+    accent-color: #a020a0;
+}
+
+@media (max-width: 768px) {
+    .container {
+        margin: 0.5rem;
+        padding: 1rem;
+    }
+
+    .brand {
+        flex-direction: column;
+        gap: 0.25rem;
+    }
+
+    .brand .logo {
+        width: 56px;
+        height: 56px;
+    }
+
+    .brand h1 {
+        font-size: 1.5rem;
+    }
+}
+
+/* --- Compact rows (tuning pass) --- */
+
+.panel .inline-row {
+    margin-bottom: 0.75rem;
+}
+
+.inline-row > [hidden] {
+    display: none !important;
+}
+
+/* Long option text: when cut off, show its end, not its start. */
+select.end-first {
+    direction: rtl;
+}
+
+.settings-row {
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 1rem;
+}
+
+.settings-row label {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin: 0;
+}
+
+.settings-row .minutes input {
+    width: 5rem;
+    flex: none;
+}
+
+.settings-row .toggle input {
+    width: auto;
+    margin: 0;
+    accent-color: #a020a0;
+}
+
+.panel .note {
+    margin: 0 0 0.75rem;
+}
+
+/* Popups: fields stack without labels. */
+.popup > input,
+.popup > select,
+.popup #build-input > input,
+.popup textarea {
+    width: 100%;
+    max-width: none;
+    margin-bottom: 0.75rem;
+}
+
+.popup > .inline-row {
+    margin-bottom: 0.75rem;
+}
+
+@media (max-width: 768px) {
+    .panel {
+        padding: 1rem;
+    }
+
+    .panel-head {
+        font-size: 1.05rem;
+        letter-spacing: 1px;
+    }
+
+    .panel-head .icon {
+        width: 30px;
+        height: 30px;
+    }
+
+    /* The task row: project on its own line, then task/issue and VIEW. */
+    #task-row {
+        flex-wrap: wrap;
+    }
+
+    #task-row #project-select {
+        flex-basis: 100%;
+    }
+
+    .inline-row button {
+        padding: 0.75rem 0.9rem;
+    }
+
+    .wide-only {
+        display: none;
+    }
+
+    /* Keep button pairs side by side. */
+    .panel .button-group,
+    .popup .button-group {
+        flex-direction: row;
+    }
+
+    .panel .button-group button,
+    .popup .button-group button {
+        min-width: 0;
+        padding: 0.9rem 0.5rem;
+        font-size: 1rem;
+    }
+}
+
+/* The frame behind the panels: more see-through than style.css's 0.4. The
+   panels themselves keep their own background. */
+.container {
+    background: rgba(25, 25, 35, 0.1);
+}
+
+/* --- Spotify-only --- */
+
+/* Three sources in the Create panel: same text size, less side padding. */
+.sources button,
+.sources button:hover {
+    min-width: 0;
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
+}
+
+.spotify-link {
+    margin: 0.75rem 0 0;
+}
+
+.spotify-link a {
+    color: #b9f6ca;
+}
+
+#now-playing .session-now {
+    margin-bottom: 0.25rem;
+}
+
+@media (max-width: 768px) {
+    /* Three side by side don't fit a phone at normal text size: stack them. */
+    .panel .button-group.sources {
+        flex-direction: column;
+    }
+}
+
+#playlist-screen > .inline-row {
+    margin-bottom: 1rem;
 }

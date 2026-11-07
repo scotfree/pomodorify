@@ -133,6 +133,7 @@
 }
 
 .popup {
+    box-sizing: border-box;
     width: min(680px, calc(100vw - 2rem));
     max-height: calc(100vh - 2rem);
     padding: 1.5rem;
@@ -470,5 +471,108 @@
 
     .brand h1 {
         font-size: 1.5rem;
+    }
+}
+
+/* --- Compact rows (tuning pass) --- */
+
+.panel .inline-row {
+    margin-bottom: 0.75rem;
+}
+
+.inline-row > [hidden] {
+    display: none !important;
+}
+
+/* Long option text: when cut off, show its end, not its start. */
+select.end-first {
+    direction: rtl;
+}
+
+.settings-row {
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 1rem;
+}
+
+.settings-row label {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin: 0;
+}
+
+.settings-row .minutes input {
+    width: 5rem;
+    flex: none;
+}
+
+.settings-row .toggle input {
+    width: auto;
+    margin: 0;
+    accent-color: #a020a0;
+}
+
+.panel .note {
+    margin: 0 0 0.75rem;
+}
+
+/* Popups: fields stack without labels. */
+.popup > input,
+.popup > select,
+.popup #build-input > input,
+.popup textarea {
+    width: 100%;
+    max-width: none;
+    margin-bottom: 0.75rem;
+}
+
+.popup > .inline-row {
+    margin-bottom: 0.75rem;
+}
+
+@media (max-width: 768px) {
+    .panel {
+        padding: 1rem;
+    }
+
+    .panel-head {
+        font-size: 1.05rem;
+        letter-spacing: 1px;
+    }
+
+    .panel-head .icon {
+        width: 30px;
+        height: 30px;
+    }
+
+    /* The task row: project on its own line, then task/issue and VIEW. */
+    #task-row {
+        flex-wrap: wrap;
+    }
+
+    #task-row #project-select {
+        flex-basis: 100%;
+    }
+
+    .inline-row button {
+        padding: 0.75rem 0.9rem;
+    }
+
+    .wide-only {
+        display: none;
+    }
+
+    /* Keep button pairs side by side. */
+    .panel .button-group,
+    .popup .button-group {
+        flex-direction: row;
+    }
+
+    .panel .button-group button,
+    .popup .button-group button {
+        min-width: 0;
+        padding: 0.9rem 0.5rem;
+        font-size: 1rem;
     }
 }

@@ -35,73 +35,31 @@
         </div>
 
         <div id="home-screen" hidden>
-            <!-- 1. Pomo: pick a playlist and a task, start, control -->
+            <!-- 1. Pomodoro: pick a playlist and a task, start, control -->
             <section class="panel" id="pomo-panel">
-                <h2 class="panel-head"><img class="icon" src="icons/tomato.png" alt="">Pomo</h2>
+                <h2 class="panel-head"><img class="icon" src="icons/tomato.png" alt="">Pomodoro time tracking</h2>
 
                 <div id="pomo-setup">
-                    <div class="form-group">
-                        <label for="replay-select">Playlist:</label>
-                        <div class="inline-row">
-                            <select id="replay-select"></select>
-                            <button id="view-button" class="back-button">VIEW</button>
-                        </div>
-                        <p class="note" id="no-playlists-note" hidden>No playlists yet. Make one with SEARCH or LIST below.</p>
+                    <div class="inline-row">
+                        <select id="replay-select" class="end-first" aria-label="Playlist"></select>
+                        <button id="view-button" class="back-button">VIEW</button>
                     </div>
 
-                    <div class="form-group">
-                        <label for="project-select">Task:</label>
-                        <select id="project-select">
-                            <option value="none">No Project</option>
+                    <div class="inline-row" id="task-row">
+                        <select id="project-select" class="end-first" aria-label="Project">
+                            <option value="none">No project</option>
                             <optgroup label="Projects" id="project-options"></optgroup>
                             <optgroup label="Repos" id="repo-options"></optgroup>
                         </select>
-                        <p id="github-note" class="note" hidden></p>
-                    </div>
-
-                    <div class="form-group" id="title-group">
-                        <label for="project-input">Title:</label>
-                        <input type="text" id="project-input" list="project-list" placeholder="Blank: time isn't logged">
+                        <input type="text" id="project-input" list="project-list" placeholder="Task" aria-label="Task">
                         <datalist id="project-list"></datalist>
+                        <select id="issue-select" class="end-first" aria-label="Issue" hidden></select>
+                        <button id="task-view-button" class="back-button">VIEW</button>
                     </div>
-
-                    <div class="form-group" id="labels-group">
-                        <label for="labels-input">Labels:</label>
-                        <input type="text" id="labels-input" placeholder="e.g. writing, planning">
-                    </div>
-
-                    <div class="form-group" id="issue-group" hidden>
-                        <label for="issue-select">Issue:</label>
-                        <select id="issue-select"></select>
-                        <p id="issue-note" class="note" hidden></p>
-                    </div>
-
-                    <div class="new-issue" id="new-issue-form" hidden>
-                        <div class="form-group" id="new-issue-repo-group" hidden>
-                            <label for="new-issue-repo">Repo:</label>
-                            <select id="new-issue-repo"></select>
-                        </div>
-                        <div class="form-group">
-                            <label for="new-issue-title">Title:</label>
-                            <input type="text" id="new-issue-title">
-                        </div>
-                        <div class="form-group" id="new-issue-type-group" hidden>
-                            <label for="new-issue-type">Type:</label>
-                            <select id="new-issue-type"></select>
-                        </div>
-                        <div class="form-group" id="new-issue-epic-group" hidden>
-                            <label for="new-issue-epic">Epic:</label>
-                            <select id="new-issue-epic"></select>
-                        </div>
-                        <div class="form-group" id="new-issue-estimate-group" hidden>
-                            <label for="new-issue-estimate">Estimate (h):</label>
-                            <input type="number" id="new-issue-estimate" min="0" step="0.25">
-                        </div>
-                        <button id="create-issue-button">CREATE</button>
-                        <p id="new-issue-status" class="note" hidden></p>
-                    </div>
-
+                    <p id="github-note" class="note" hidden></p>
+                    <p id="issue-note" class="note" hidden></p>
                     <p id="player-note" class="note" hidden></p>
+
                     <button id="start-button" class="start-button" disabled>START</button>
                 </div>
 
@@ -125,22 +83,24 @@
                 </div>
             </section>
 
-            <!-- 2. Playlist: make a new one -->
+            <!-- 2. Create playlists -->
             <section class="panel">
-                <h2 class="panel-head"><img class="icon" src="icons/pencil.png" alt="">Playlist</h2>
-                <div class="form-group">
-                    <label for="duration">Minutes:</label>
-                    <input type="number" id="duration" value="25" min="1" max="120">
+                <h2 class="panel-head"><img class="icon" src="icons/pencil.png" alt="">Create pomodoro playlists</h2>
+                <div class="inline-row settings-row">
+                    <label class="minutes"><input type="number" id="duration" value="25" min="1" max="120" aria-label="Minutes"> min</label>
+                    <label class="toggle"><input type="checkbox" id="opt-live"> Live</label>
+                    <label class="toggle"><input type="checkbox" id="opt-covers"> Covers</label>
+                    <label class="toggle"><input type="checkbox" id="opt-official"> Official</label>
                 </div>
-                <div class="stack">
-                    <button id="search-open-button">SEARCH</button>
-                    <button id="build-open-button" class="list-button">LIST</button>
+                <div class="button-group">
+                    <button id="search-open-button"><span class="wide-only">FROM </span>SEARCH</button>
+                    <button id="build-open-button" class="list-button"><span class="wide-only">FROM </span>LIST</button>
                 </div>
             </section>
 
             <!-- 3. Tasks: logged time -->
             <section class="panel">
-                <h2 class="panel-head"><img class="icon" src="icons/checkbox.png" alt="">Tasks</h2>
+                <h2 class="panel-head"><img class="icon" src="icons/checkbox.png" alt="">Current tasks</h2>
                 <div class="totals-scroll">
                     <table class="totals-table">
                         <thead><tr><th>Task</th><th>Hours</th></tr></thead>
@@ -165,12 +125,9 @@
         <!-- A saved playlist -->
         <div id="playlist-screen" hidden>
             <button id="playlist-back-button" class="back-button back-link">◀ BACK</button>
-            <div class="form-group">
-                <label for="playlist-name">Name:</label>
-                <div class="inline-row">
-                    <input type="text" id="playlist-name">
-                    <button id="rename-button" class="back-button">RENAME</button>
-                </div>
+            <div class="inline-row">
+                <input type="text" id="playlist-name" aria-label="Playlist name" placeholder="Name">
+                <button id="rename-button" class="back-button">RENAME</button>
             </div>
             <div class="playlist-info">
                 <p>Source: <span id="playlist-source"></span></p>
@@ -189,16 +146,10 @@
     </div>
 
     <dialog id="search-dialog" class="popup">
-        <h2>Search</h2>
-        <div class="form-group">
-            <label for="search-input">Search YouTube:</label>
-            <input type="text" id="search-input" placeholder="e.g. lofi beats">
-        </div>
-        <div class="form-group">
-            <label for="search-name">Name:</label>
-            <input type="text" id="search-name" placeholder="Blank: from the search">
-        </div>
-        <div class="form-group sliders">
+        <h2>From search</h2>
+        <input type="text" id="search-input" placeholder="Search YouTube, e.g. lofi beats" aria-label="Search">
+        <input type="text" id="search-name" placeholder="Name (blank: from the search)" aria-label="Name">
+        <div class="sliders">
             <label for="search-min">Shortest: <span id="search-min-value"></span> min</label>
             <input type="range" id="search-min" min="1" max="10" step="0.5" value="2">
             <label for="search-max">Longest: <span id="search-max-value"></span> min</label>
@@ -207,10 +158,8 @@
         <fieldset class="checks">
             <label><input type="checkbox" id="opt-instrumental"> Instrumental</label>
             <label><input type="checkbox" id="opt-explicit" checked> Allow explicit</label>
-            <label><input type="checkbox" id="opt-official"> Official audio</label>
-            <label><input type="checkbox" id="opt-nolive"> No live</label>
-            <label><input type="checkbox" id="opt-nocovers"> No covers</label>
         </fieldset>
+        <p class="note" id="search-shared"></p>
         <p class="note" id="search-status" hidden></p>
         <div class="button-group">
             <button id="search-cancel-button" class="back-button">CANCEL</button>
@@ -219,17 +168,11 @@
     </dialog>
 
     <dialog id="build-dialog" class="popup">
-        <h2>List</h2>
+        <h2>From list</h2>
         <div id="build-input">
-            <div class="form-group">
-                <label for="build-title">Name:</label>
-                <input type="text" id="build-title">
-            </div>
-            <div class="form-group">
-                <label for="build-lines">Songs, one per line. Adding the artist helps; Spotify track links work too.</label>
-                <textarea id="build-lines" rows="12" spellcheck="false"
-                    placeholder="Johnny Cash - Hurt&#10;Nina Simone - Feeling Good&#10;https://open.spotify.com/track/…"></textarea>
-            </div>
+            <input type="text" id="build-title" placeholder="Name" aria-label="Name">
+            <textarea id="build-lines" rows="12" spellcheck="false" aria-label="Songs, one per line"
+                placeholder="Songs, one per line. Artist helps; Spotify track links work.&#10;&#10;Johnny Cash - Hurt&#10;Nina Simone - Feeling Good&#10;https://open.spotify.com/track/…"></textarea>
             <p class="note" id="build-duration-note"></p>
             <div class="button-group">
                 <button id="build-cancel-button" class="back-button">CANCEL</button>
@@ -244,6 +187,31 @@
                 <button id="build-close-button" class="back-button">CLOSE</button>
                 <button id="build-show-button" hidden>VIEW</button>
             </div>
+        </div>
+    </dialog>
+
+    <dialog id="task-dialog" class="popup">
+        <h2>Task</h2>
+        <input type="text" id="task-title" list="project-list" placeholder="Task (blank: time isn't logged)" aria-label="Task">
+        <input type="text" id="labels-input" placeholder="Labels, comma-separated" aria-label="Labels">
+        <div class="button-group">
+            <button id="task-done-button">DONE</button>
+        </div>
+    </dialog>
+
+    <dialog id="new-issue-dialog" class="popup">
+        <h2>New issue</h2>
+        <select id="new-issue-repo" aria-label="Repo" hidden></select>
+        <input type="text" id="new-issue-title" placeholder="Title" aria-label="Title">
+        <div class="inline-row">
+            <select id="new-issue-type" aria-label="Type" hidden></select>
+            <select id="new-issue-epic" class="end-first" aria-label="Epic" hidden></select>
+        </div>
+        <input type="number" id="new-issue-estimate" min="0" step="0.25" placeholder="Estimated hours" aria-label="Estimated hours" hidden>
+        <p id="new-issue-status" class="note" hidden></p>
+        <div class="button-group">
+            <button id="new-issue-cancel-button" class="back-button">CANCEL</button>
+            <button id="create-issue-button">CREATE</button>
         </div>
     </dialog>
 

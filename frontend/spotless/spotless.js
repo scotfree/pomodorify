@@ -187,9 +187,7 @@ function renderPlaylistScreen() {
     $('playlist-tracks').replaceChildren(...p.tracks.map(trackRow));
 
     const playingThis = isRunning() && runningId === p.id;
-    $('playlist-controls').hidden = !playingThis;
-    $('playlist-actions').hidden = playingThis;
-    $('playlist-task').textContent = playingThis ? loggingText(sessionTarget)
+    $('playlist-task').textContent = playingThis ? `Playing now. ${loggingText(sessionTarget)}`
         : isRunning() ? 'Another playlist is playing.'
             : loggingText(chooseLogTarget(), true);
     renderStartButtons();
@@ -933,15 +931,17 @@ function startSession(playlistId) {
     playing = false;
 
     $('running-task').textContent = loggingText(target);
+    $('running-playlist').textContent = playlist.name;
     $('session-github').textContent = '';
     $('session-track-name').textContent = 'Starting…';
     $('session-track-artist').textContent = '';
+    // Keep the panel the same height while it swaps setup for the summary.
+    $('pomo-running').style.minHeight = `${$('pomo-setup').offsetHeight}px`;
     $('pomo-setup').hidden = true;
     $('pomo-running').hidden = false;
-    document.querySelector('#pomo-running [data-controls]').hidden = false;
-    $('running-view-button').hidden = false;
+    $('running-info').hidden = false;
     $('session-done').hidden = true;
-    $('player-wrap').classList.remove('parked');
+    $('now-playing').classList.remove('parked');
     renderControls();
     renderSession();
     if (viewedId) renderPlaylistScreen();
@@ -1007,11 +1007,11 @@ function onPlaybackChange(change) {
 function renderSession() {
     if (!session) return;
     const elapsed = session.elapsedMs();
-    $('session-elapsed').textContent = formatClock(elapsed);
     if (current.index >= 0) {
+        const total = totalMs(sessionTracks);
         const left = remainingMs(sessionTracks, current.index, elapsed - current.startedAtMs);
         $('session-progress').textContent =
-            `Track ${current.index + 1} of ${sessionTracks.length} · ${Math.ceil(left / 60000)} min left`;
+            `Track ${current.index + 1} of ${sessionTracks.length} · ${formatClock(total - left)} / ${formatClock(total)}`;
     } else {
         $('session-progress').textContent = '';
     }
@@ -1027,15 +1027,12 @@ function endSession() {
     clearInterval(ticker);
     ticker = null;
 
-    document.querySelector('#pomo-running [data-controls]').hidden = true;
-    $('running-view-button').hidden = true;
+    $('running-info').hidden = true;
     $('session-done').hidden = false;
-    $('session-progress').textContent = '';
-    $('player-wrap').classList.add('parked');
+    $('now-playing').classList.add('parked');
     $('session-summary').textContent = hours > 0
         ? `Logged ${hours.toFixed(2)} h to ${project}.`
         : project ? 'Nothing played, so nothing was logged.' : 'No task title, so nothing was logged.';
-    $('running-task').textContent = project ? `Task: ${project}` : '';
     renderTotals();
     renderStartButtons();
     if (viewedId) renderPlaylistScreen();
@@ -1088,7 +1085,8 @@ function wireEvents() {
     click('view-button', () => { if (selectedId) openPlaylist(selectedId); });
     click('start-button', () => startSession(selectedId));
     click('new-session-button', closeSession);
-    click('running-view-button', () => { if (runningId) openPlaylist(runningId); });
+    click('running-playlist', () => { if (runningId) openPlaylist(runningId); });
+    click('running-stop-button', stopSession);
     on('project-select', 'change', onProjectChange);
     on('issue-select', 'change', onIssueChange);
     on('new-issue-repo', 'change', () => loadCreateInfo($('new-issue-repo').value));

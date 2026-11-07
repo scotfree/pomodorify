@@ -55,6 +55,50 @@ export function videosToTracks(items, range) {
     return classifyVideos(items, range).filter(r => r.track).map(r => r.track);
 }
 
+// The Search popup's options. Lengths are in minutes.
+export const SEARCH_DEFAULTS = {
+    minMinutes: 2,
+    maxMinutes: 5,
+    instrumental: false,  // adds "instrumental"
+    explicit: true,       // false: YouTube's SafeSearch "moderate"
+    official: false,      // adds "official audio"
+    noLive: false,        // excludes "live"
+    noCovers: false,      // excludes "cover" and "remix"
+};
+
+// The search words for the options. YouTube search supports -word exclusions.
+export function searchQuery(text, options = {}) {
+    const o = { ...SEARCH_DEFAULTS, ...options };
+    const parts = [String(text ?? '').trim()];
+    if (o.instrumental) parts.push('instrumental');
+    if (o.official) parts.push('"official audio"');
+    if (o.noLive) parts.push('-live');
+    if (o.noCovers) parts.push('-cover -remix');
+    return parts.filter(Boolean).join(' ');
+}
+
+// YouTube's length filter only has buckets: short (<4 min), medium (4-20).
+// Use whichever overlap the range; the exact range is filtered afterwards.
+export function durationBuckets(minMs, maxMs) {
+    const four = 4 * 60 * 1000;
+    const buckets = [];
+    if (minMs < four) buckets.push('short');
+    if (maxMs > four) buckets.push('medium');
+    return buckets;
+}
+
+// "2–5 min · instrumental · no live" for showing a search's options.
+export function describeSearchOptions(options = {}) {
+    const o = { ...SEARCH_DEFAULTS, ...options };
+    const parts = [`${o.minMinutes}–${o.maxMinutes} min`];
+    if (o.instrumental) parts.push('instrumental');
+    if (!o.explicit) parts.push('no explicit');
+    if (o.official) parts.push('official audio');
+    if (o.noLive) parts.push('no live');
+    if (o.noCovers) parts.push('no covers');
+    return parts.join(' · ');
+}
+
 // getKey: () => API key. fetchFn is injectable for tests.
 export function createYoutubeApi(getKey, fetchFn = (...args) => fetch(...args)) {
     async function get(path, params) {
@@ -76,7 +120,7 @@ export function createYoutubeApi(getKey, fetchFn = (...args) => fetch(...args)) 
 
     // videoDuration: 'medium' is 4-20 min, 'short' under 4 min. Without it,
     // popular searches ("lofi beats") are mostly hours-long mixes and streams.
-    async function searchIds(query, { categoryId, videoDuration, maxResults = 50 } = {}) {
+    async function searchIds(query, { categoryId, videoDuration, maxResults = 50, safeSearch } = {}) {
         const body = await get('search', {
             part: 'id',
             type: 'video',
@@ -86,6 +130,7 @@ export function createYoutubeApi(getKey, fetchFn = (...args) => fetch(...args)) 
             videoSyndicated: 'true',  // playable outside youtube.com
             videoCategoryId: categoryId,
             videoDuration,
+            safeSearch,
         });
         return (body.items ?? []).map(i => i.id?.videoId).filter(Boolean);
     }
@@ -97,20 +142,24 @@ export function createYoutubeApi(getKey, fetchFn = (...args) => fetch(...args)) 
     }
 
     return {
-        // Passes, stopping once there are enough tracks: 4-20 min music, then
-        // short music (most songs are 2-4 min), then 4-20 min of anything
-        // (e.g. "rain sounds" isn't in the Music category).
-        async searchTracks(query, { enough = 15 } = {}) {
+        // Passes, stopping once there are enough tracks: Music in each length
+        // bucket the range needs, then the same outside the Music category
+        // (e.g. "rain sounds" isn't Music). Each pass is 101 quota units.
+        async searchTracks(text, options = {}, { enough = 15 } = {}) {
+            const o = { ...SEARCH_DEFAULTS, ...options };
+            const range = { minMs: o.minMinutes * 60 * 1000, maxMs: o.maxMinutes * 60 * 1000 };
+            const q = searchQuery(text, o);
+            const safeSearch = o.explicit ? 'none' : 'moderate';
+            const buckets = durationBuckets(range.minMs, range.maxMs);
             const passes = [
-                { categoryId: '10', videoDuration: 'medium' },
-                { categoryId: '10', videoDuration: 'short' },
-                { videoDuration: 'medium' },
+                ...buckets.map(videoDuration => ({ categoryId: '10', videoDuration })),
+                ...buckets.map(videoDuration => ({ videoDuration })),
             ];
             const tracks = [];
             const seen = new Set();
             for (const pass of passes) {
-                const ids = (await searchIds(query, pass)).filter(id => !seen.has(id));
-                for (const t of videosToTracks(await videos(ids))) {
+                const ids = (await searchIds(q, { ...pass, safeSearch })).filter(id => !seen.has(id));
+                for (const t of videosToTracks(await videos(ids), range)) {
                     seen.add(t.id);
                     tracks.push(t);
                 }

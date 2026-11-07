@@ -103,6 +103,17 @@ export function createSpotifyPlayback({
             }
         },
 
+        // Skips. Spotify's own previous restarts the track if it's a few seconds
+        // in. Skipping past the last track wraps to the first and pauses, which
+        // the end detection reads as the end of the session.
+        async next() {
+            if (!tracker.ended) await player.nextTrack();
+        },
+
+        async previous() {
+            if (!tracker.ended) await player.previousTrack();
+        },
+
         pause: () => player.pause(),
         resume: () => player.resume(),
 

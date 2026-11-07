@@ -610,3 +610,7 @@ select.end-first {
 .container {
     background: rgba(25, 25, 35, 0.1);
 }
+
+#playlist-screen > .inline-row {
+    margin-bottom: 1rem;
+}

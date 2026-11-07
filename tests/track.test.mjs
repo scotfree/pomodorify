@@ -11,6 +11,10 @@ import { resolveHoursTarget, roundHours, describeTarget } from '../frontend/trac
 import { createGithubLogger, commentBody } from '../frontend/track/loggers/github.js';
 import { createGithubApi } from '../frontend/track/github/api.js';
 import { parseProjectChoice, issueLabel, defaultRepoId } from '../frontend/track/github/picker.js';
+import { createPlaylistStore, PLAYLISTS_KEY } from '../frontend/track/store.js';
+import { rejection, filterTracks, searchQuery, describeSearchOptions, SONG_RANGE } from '../frontend/track/search.js';
+import { buildPlaylist, songQuery, FILLER_QUERY } from '../frontend/track/build.js';
+import { createSpotifyApi, SEARCH_PAGE } from '../frontend/track/spotify-api.js';
 
 let passed = 0;
 let failed = 0;
@@ -368,6 +372,8 @@ function fakeSdk({ failWith = null } = {}) {
         activateElement() { calls.push('activate'); return Promise.resolve(); }
         pause() { calls.push('pause'); return Promise.resolve(); }
         resume() { calls.push('resume'); return Promise.resolve(); }
+        nextTrack() { calls.push('next'); return Promise.resolve(); }
+        previousTrack() { calls.push('previous'); return Promise.resolve(); }
     }
     const fetchFn = async (url, opts) => {
         calls.push({ url, method: opts.method, body: JSON.parse(opts.body), auth: opts.headers.Authorization });
@@ -442,6 +448,166 @@ await testAsync('stop pauses and ignores later states', async () => {
     sdk.player().fire('player_state_changed', state(false, 5000, 'Big Mon'));
     assert.equal(changes.length, 1);
     assert.equal(sdk.calls.at(-1), 'pause');
+});
+
+await testAsync('next and previous skip with the SDK while playing, and do nothing after stop', async () => {
+    const { playback, sdk } = await readyAdapter();
+    await playback.play(TRACKS);
+    await playback.next();
+    await playback.previous();
+    assert.deepEqual(sdk.calls.filter(c => c === 'next' || c === 'previous'), ['next', 'previous']);
+    await playback.stop();
+    await playback.next();
+    assert.equal(sdk.calls.filter(c => c === 'next').length, 1);
+});
+
+// --- local playlist store ---
+console.log('\nplaylist store');
+
+const T = (n, min = 3) => ({ uri: `spotify:track:${n}`, name: `Song ${n}`, artist: 'A', duration_ms: min * 60000 });
+
+function store(storage = fakeStorage()) {
+    let t = 1000;
+    let n = 0;
+    return createPlaylistStore({ storage, now: () => t++, newId: () => `p${++n}` });
+}
+
+test('saves Spotify tracks under track_playlists, keeping only uri, name, artist, length', () => {
+    const storage = fakeStorage();
+    const p = store(storage).save({ name: 'Focus', tracks: [{ ...T(1), explicit: true, album: 'X' }] });
+    assert.deepEqual(p.tracks, [T(1)]);
+    assert.deepEqual(Object.keys(storage.data), [PLAYLISTS_KEY]);
+});
+
+test('tracks without a Spotify URI are not a playlist', () => {
+    assert.throws(() => store().save({ name: 'x', tracks: [{ id: 'yt', name: 'n', duration_ms: 1000 }] }));
+});
+
+test('spotifyId: set after saving to Spotify, and findable', () => {
+    const s = store();
+    const p = s.save({ name: 'Focus', tracks: [T(1)] });
+    assert.equal(s.findBySpotifyId('sp1'), null);
+    s.setSpotifyId(p.id, 'sp1');
+    assert.equal(s.findBySpotifyId('sp1').id, p.id);
+    const copy = s.save({ name: 'POMO_x', tracks: [T(2)], source: { kind: 'spotify' }, spotifyId: 'sp2' });
+    assert.equal(s.findBySpotifyId('sp2').id, copy.id);
+});
+
+test('label counts, rename, remove and export/import work as in Spotless', () => {
+    const s = store();
+    const p = s.save({ name: 'A', tracks: [T(1)] });
+    s.addLabels(p.id, ['bug', 'Bug', 'ui']);
+    s.rename(p.id, 'B');
+    const other = store();
+    assert.equal(other.importJson(s.exportJson()), 1);
+    assert.deepEqual(other.get(p.id).labels, { bug: 1, ui: 1 });
+    assert.equal(other.get(p.id).name, 'B');
+    s.remove(p.id);
+    assert.equal(s.get(p.id), null);
+});
+
+// --- search options ---
+console.log('\nsearch options');
+
+const st = (name, min, extra = {}) => ({ uri: 'spotify:track:x', name, artist: 'A', duration_ms: min * 60000, album: '', explicit: false, ...extra });
+
+test('length range, explicit, live and covers filter tracks', () => {
+    assert.equal(rejection(st('Song', 3), 'q'), null);
+    assert.match(rejection(st('Song', 7), 'q'), /outside 2:00–5:00/);
+    assert.equal(rejection(st('Song', 3, { explicit: true }), 'q', { explicit: false }), 'explicit');
+    assert.equal(rejection(st('Song', 3, { explicit: true }), 'q'), null);  // allowed by default
+    assert.equal(rejection(st('Song - Live', 3), 'q'), 'live version');
+    assert.equal(rejection(st('Song', 3, { album: 'Live at Leeds' }), 'q'), 'live version');
+    assert.equal(rejection(st('Song (Acoustic Cover)', 3), 'q'), 'cover');
+    assert.equal(rejection(st('Song - Remix', 3), 'q'), 'remix');
+    assert.equal(rejection(st('Song - Live', 3), 'q', { live: true }), null);
+    assert.equal(rejection(st('Song - Remix', 3), 'q', { covers: true }), null);
+});
+
+test('a word the search contains is not held against a track', () => {
+    assert.equal(rejection(st('Live Forever', 4), 'oasis live forever'), null);
+    assert.equal(rejection(st('Song - Remix', 3), 'song remix'), null);
+});
+
+test('filterTracks keeps what fits; searchQuery adds instrumental once', () => {
+    assert.deepEqual(filterTracks([st('a', 3), st('b', 9)], 'q').map(t => t.name), ['a']);
+    assert.equal(searchQuery(' lofi  beats ', { instrumental: true }), 'lofi beats instrumental');
+    assert.equal(searchQuery('instrumental jazz', { instrumental: true }), 'instrumental jazz');
+    assert.equal(searchQuery('jazz'), 'jazz');
+    assert.equal(describeSearchOptions({ instrumental: true, explicit: false, covers: true }),
+        '2–5 min · instrumental · no explicit · with covers');
+});
+
+// --- spotify search paging ---
+console.log('\nspotify search');
+
+await testAsync('search pages 10 at a time and stops on a short page', async () => {
+    const urls = [];
+    const fetchFn = async (url) => {
+        urls.push(new URL(url));
+        const offset = Number(new URL(url).searchParams.get('offset'));
+        const count = offset < 20 ? 10 : 3;
+        const items = Array.from({ length: count }, (_, i) => ({
+            uri: `spotify:track:${offset + i}`, name: `t${offset + i}`, artists: [{ name: 'A' }],
+            duration_ms: 180000, explicit: i === 0, album: { name: 'Al' },
+        }));
+        return { ok: true, status: 200, json: async () => ({ tracks: { items } }) };
+    };
+    const found = await createSpotifyApi(async () => 'tok', fetchFn).searchTracks('lofi');
+    assert.equal(found.length, 23);
+    assert.deepEqual(urls.map(u => [u.searchParams.get('limit'), u.searchParams.get('offset')]),
+        [['10', '0'], ['10', '10'], ['10', '20']]);
+    assert.equal(SEARCH_PAGE, 10);
+    assert.deepEqual(found[0], { uri: 'spotify:track:0', name: 't0', artist: 'A', duration_ms: 180000, explicit: true, album: 'Al' });
+});
+
+await testAsync('search with pages: 1 asks once', async () => {
+    let n = 0;
+    const fetchFn = async () => { n++; return { ok: true, status: 200, json: async () => ({ tracks: { items: [] } }) }; };
+    await createSpotifyApi(async () => 'tok', fetchFn).searchTracks('x', { pages: 1 });
+    assert.equal(n, 1);
+});
+
+// --- build from a list (Spotify) ---
+console.log('\nbuild from a list');
+
+const ok = (...tracks) => ({ results: tracks.map(t => ({ track: t })) });
+const keepOrder = () => 0.999;
+
+function fakeSongSearch(table) {
+    const calls = [];
+    const fn = async (q) => { calls.push(q); return table[q] ?? { results: [] }; };
+    fn.calls = calls;
+    return fn;
+}
+
+await testAsync('searches the line as typed (no " audio"), first usable result, stops when full', async () => {
+    assert.equal(songQuery(' Johnny Cash - "Hurt" '), 'Johnny Cash - Hurt');
+    const search = fakeSongSearch({ a: ok(T(1, 4), T(2, 4)), b: ok(T(3, 4)), c: ok(T(4, 4)) });
+    const { tracks, log } = await buildPlaylist({ lines: ['a', 'b', 'c'], minutes: 6, searchSong: search, random: keepOrder });
+    assert.deepEqual(tracks.map(t => t.uri), [T(1).uri, T(3).uri]);
+    assert.deepEqual(search.calls, ['a', 'b']);
+    assert.deepEqual(log.at(-1), { kind: 'unused', count: 1, lines: ['c'] });
+});
+
+await testAsync('a Spotify link is looked up by title and its own track is preferred', async () => {
+    const id = '4cOdK2wGLETKBW3PvgPWqT';
+    const linked = { uri: `spotify:track:${id}`, name: 'Hurt', artist: 'Johnny Cash', duration_ms: 3 * 60000 };
+    const search = fakeSongSearch({ Hurt: ok(T(9), linked) });
+    const { tracks, log } = await buildPlaylist({
+        lines: [`https://open.spotify.com/track/${id}?si=x`], minutes: 2, searchSong: search,
+        spotifyTitle: async () => 'Hurt', random: keepOrder,
+    });
+    assert.equal(log[0].spotify, 'Hurt');
+    assert.equal(tracks[0].uri, linked.uri);
+});
+
+await testAsync('short pool: other results, then bluegrass; no track twice', async () => {
+    const search = fakeSongSearch({ a: ok(T(1), T(2)), [FILLER_QUERY]: ok(T(2), T(5), T(6)) });
+    const { tracks, log } = await buildPlaylist({ lines: ['a'], minutes: 10, searchSong: search, random: keepOrder });
+    assert.deepEqual(tracks.map(t => t.uri), [T(1), T(2), T(5), T(6)].map(t => t.uri));
+    assert.deepEqual(log.map(e => e.source ?? e.kind), ['line', 'results', 'bluegrass']);
+    assert.equal(SONG_RANGE.maxMinutes, 12);
 });
 
 // --- session display helpers ---

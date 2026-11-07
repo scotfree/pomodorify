@@ -10,6 +10,8 @@
 // Pure apart from the injected searchSong / spotifyTitle; returns a log of
 // every step for the result screen.
 
+import { exclusions } from './youtube-api.js';
+
 export const FILLER_QUERY = 'instrumental bluegrass';
 
 const SPOTIFY_TRACK = /^(?:https?:\/\/open\.spotify\.com\/(?:intl-[a-z]{2}(?:-[a-z]{2})?\/)?track\/|spotify:track:)([A-Za-z0-9]{22})(?:[/?#].*)?$/i;
@@ -35,10 +37,15 @@ export function parseLines(text) {
 }
 
 // The YouTube query for a song name. " audio" favors Official Audio uploads
-// over music videos with long intros.
-export function songQuery(name) {
+// over music videos with long intros ("official audio" with the Official
+// option). Live versions and covers are excluded unless their options are on.
+export function songQuery(name, options = {}) {
     const clean = name.replace(/["“”]/g, '').replace(/\s+/g, ' ').trim();
-    return /\baudio\b/i.test(clean) ? clean : `${clean} audio`;
+    const parts = [clean];
+    if (options.official) parts.push('"official audio"');
+    else if (!/\baudio\b/i.test(clean)) parts.push('audio');
+    parts.push(...exclusions(clean, options));
+    return parts.join(' ');
 }
 
 export function shuffle(list, random = Math.random) {
@@ -59,7 +66,7 @@ export function shuffle(list, random = Math.random) {
 //   { kind: 'filler', source: 'results' | 'bluegrass', query?, picks, error? }
 //   { kind: 'unused', count, lines }
 export async function buildPlaylist({
-    lines, minutes, searchSong, spotifyTitle, random = Math.random, onLog = () => {},
+    lines, minutes, searchSong, spotifyTitle, random = Math.random, onLog = () => {}, options = {},
 }) {
     const limitMs = minutes * 60 * 1000;
     const tracks = [];
@@ -90,7 +97,7 @@ export async function buildPlaylist({
                 name = await spotifyTitle(spotifyId);
                 entry.spotify = name;
             }
-            entry.query = songQuery(name);
+            entry.query = songQuery(name, options);
             const { results, cached } = await searchSong(entry.query);
             if (cached) entry.cached = true;
             for (const r of results) {

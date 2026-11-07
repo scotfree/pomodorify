@@ -55,25 +55,38 @@ export function videosToTracks(items, range) {
     return classifyVideos(items, range).filter(r => r.track).map(r => r.track);
 }
 
-// The Search popup's options. Lengths are in minutes.
+// Options for making playlists. Lengths are in minutes. official, live and
+// covers are the Playlist panel's row and apply to List too; the rest are the
+// Search popup's.
 export const SEARCH_DEFAULTS = {
     minMinutes: 2,
     maxMinutes: 5,
     instrumental: false,  // adds "instrumental"
     explicit: true,       // false: YouTube's SafeSearch "moderate"
     official: false,      // adds "official audio"
-    noLive: false,        // excludes "live"
-    noCovers: false,      // excludes "cover" and "remix"
+    live: false,          // false: excludes "live"
+    covers: false,        // false: excludes "cover" and "remix"
 };
+
+const hasWord = (text, word) => new RegExp(`\\b${word}\\b`, 'i').test(text);
+
+// The -word exclusions for live and covers. A word the text itself contains
+// isn't excluded, so "Oasis - Live Forever" still finds the song.
+export function exclusions(text, { live = SEARCH_DEFAULTS.live, covers = SEARCH_DEFAULTS.covers } = {}) {
+    const words = [];
+    if (!live) words.push('live');
+    if (!covers) words.push('cover', 'remix');
+    return words.filter(w => !hasWord(text, w)).map(w => `-${w}`);
+}
 
 // The search words for the options. YouTube search supports -word exclusions.
 export function searchQuery(text, options = {}) {
     const o = { ...SEARCH_DEFAULTS, ...options };
-    const parts = [String(text ?? '').trim()];
+    const clean = String(text ?? '').trim().replace(/\s+/g, ' ');
+    const parts = [clean];
     if (o.instrumental) parts.push('instrumental');
     if (o.official) parts.push('"official audio"');
-    if (o.noLive) parts.push('-live');
-    if (o.noCovers) parts.push('-cover -remix');
+    parts.push(...exclusions(clean, o));
     return parts.filter(Boolean).join(' ');
 }
 
@@ -87,16 +100,24 @@ export function durationBuckets(minMs, maxMs) {
     return buckets;
 }
 
-// "2–5 min · instrumental · no live" for showing a search's options.
+// "2–5 min · instrumental · official audio" for showing a search's options.
 export function describeSearchOptions(options = {}) {
     const o = { ...SEARCH_DEFAULTS, ...options };
     const parts = [`${o.minMinutes}–${o.maxMinutes} min`];
     if (o.instrumental) parts.push('instrumental');
     if (!o.explicit) parts.push('no explicit');
-    if (o.official) parts.push('official audio');
-    if (o.noLive) parts.push('no live');
-    if (o.noCovers) parts.push('no covers');
+    parts.push(...describeShared(o));
     return parts.join(' · ');
+}
+
+// The Live / Covers / Official row, as words. Defaults (no live, no covers,
+// any audio) say nothing.
+export function describeShared(o = {}) {
+    const parts = [];
+    if (o.official) parts.push('official audio');
+    if (o.live) parts.push('with live');
+    if (o.covers) parts.push('with covers');
+    return parts;
 }
 
 // getKey: () => API key. fetchFn is injectable for tests.

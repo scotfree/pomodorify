@@ -24,7 +24,7 @@ import {
     parseProjectChoice, projectValue, issueLabel, defaultRepoId,
 } from '../track/github/picker.js';
 import { createYoutubeSettings } from './settings.js';
-import { createYoutubeApi, describeSearchOptions } from './youtube-api.js';
+import { createYoutubeApi, describeSearchOptions, describeShared } from './youtube-api.js';
 import { createPlaylistStore } from './playlists.js';
 import { createYoutubePlayback } from './playback/youtube.js';
 import { buildPlaylist, parseLines, cachedSearch, fetchSpotifyTitle } from './build.js';
@@ -114,6 +114,10 @@ function el(tag, className, text) {
     return node;
 }
 
+// Options of `.end-first` selects show the end of their text when cut off
+// (CSS direction: rtl). The LRM marks keep punctuation like "(25:00)" in place.
+const endFirst = (text, value) => new Option(`\u200E${text}\u200E`, value);
+
 function totalMs(tracks) {
     return tracks.reduce((sum, t) => sum + t.duration_ms, 0);
 }
@@ -131,17 +135,16 @@ function today() {
 // Saved playlists, newest first. Keeps the current choice, else the newest.
 function renderPlaylists() {
     const list = playlists.list();
-    if (!list.some(p => p.id === selectedId)) selectedId = list[0]?.id ?? null;
-    $('replay-select').replaceChildren(...list.map(p =>
-        new Option(`${p.name} (${formatDuration(totalMs(p.tracks))})`, p.id)));
+    if (!list.some(p => p.id === selectedId)) selectedId = null;
+    $('replay-select').replaceChildren(
+        new Option(list.length ? 'Playlist' : 'Playlist (none yet: create one below)', ''),
+        ...list.map(p => endFirst(`${p.name} (${formatDuration(totalMs(p.tracks))})`, p.id)));
     $('replay-select').value = selectedId ?? '';
-    $('replay-select').hidden = list.length === 0;
-    $('view-button').hidden = list.length === 0;
-    $('no-playlists-note').hidden = list.length > 0;
     renderStartButtons();
 }
 
 function renderStartButtons() {
+    $('view-button').disabled = !selectedId;
     $('start-button').disabled = !(playerReady && selectedId && !isRunning());
     $('playlist-start-button').disabled = !(playerReady && viewedId && !isRunning());
 }
@@ -150,7 +153,7 @@ function renderStartButtons() {
 
 function sourceText(p) {
     if (p.source?.kind === 'search') return `Search “${p.source.query}” · ${describeSearchOptions(p.source.options)}`;
-    if (p.source?.kind === 'list') return 'List';
+    if (p.source?.kind === 'list') return ['List', ...describeShared(p.source.options)].join(' · ');
     return p.query ? `Search “${p.query}”` : '—';
 }
 
@@ -222,10 +225,25 @@ function readSearchOptions() {
         maxMinutes: parseFloat($('search-max').value),
         instrumental: $('opt-instrumental').checked,
         explicit: $('opt-explicit').checked,
-        official: $('opt-official').checked,
-        noLive: $('opt-nolive').checked,
-        noCovers: $('opt-nocovers').checked,
+        ...sharedOptions(),
     };
+}
+
+// The Live / Covers / Official row in the Create panel: Search and List both use it.
+function sharedOptions() {
+    return {
+        official: $('opt-official').checked,
+        live: $('opt-live').checked,
+        covers: $('opt-covers').checked,
+    };
+}
+
+function sharedSummary() {
+    const o = sharedOptions();
+    const parts = [`${minutesSetting()} min`];
+    if (o.official) parts.push('official audio');
+    parts.push(o.live ? 'with live' : 'no live', o.covers ? 'with covers' : 'no covers');
+    return parts.join(' · ');
 }
 
 // Keeps shortest <= longest, moving the other slider.
@@ -242,6 +260,7 @@ function syncSliders(changed) {
 
 function openSearch() {
     syncSliders();
+    $('search-shared').textContent = sharedSummary();
     setNote('search-status', '');
     $('search-create-button').disabled = false;
     $('search-dialog').showModal();
@@ -294,8 +313,7 @@ let built = null;  // the playlist the last build saved
 function openBuild() {
     $('build-input').hidden = false;
     $('build-output').hidden = true;
-    $('build-duration-note').textContent = `Fits to ${minutesSetting()} minutes (the Minutes setting): lines are picked at random `
-        + 'and only the ones needed are searched. Each search uses about 1% of the day\'s shared YouTube quota.';
+    $('build-duration-note').textContent = `${sharedSummary()}. Lines are picked at random; only the ones needed are searched.`;
     $('build-dialog').showModal();
     $('build-title').focus();
 }
@@ -385,13 +403,14 @@ async function createBuild() {
             searchSong,
             spotifyTitle: (id) => fetchSpotifyTitle(id),
             onLog: (entry) => $('build-log').append(renderLogEntry(entry)),
+            options: sharedOptions(),
         });
         const result = $('build-result');
         result.replaceChildren();
         if (tracks.length === 0) {
             result.append(el('p', 'fail', 'Nothing usable was found, so nothing was saved.'));
         } else {
-            built = playlists.save({ name: title, minutes, tracks, source: { kind: 'list' } });
+            built = playlists.save({ name: title, minutes, tracks, source: { kind: 'list', options: sharedOptions() } });
             selectedId = built.id;
             renderPlaylists();
             const saved = el('p');
@@ -547,7 +566,8 @@ async function loadGithub() {
     github = { viewer: null, repos: [], projects: [], issues: new Map() };
     renderProjectOptions();
     if (!githubSettings.getToken()) {
-        setNote('github-note', 'Add a GitHub token in Settings to log time to issues.');
+        $('project-options').replaceChildren(new Option('GitHub projects: add a token in Settings', '', false, false));
+        $('project-options').firstChild.disabled = true;
         renderGithubSettings();
         return;
     }
@@ -603,16 +623,15 @@ async function onProjectChange() {
     const value = $('project-select').value;
     const choice = parseProjectChoice(value);
     const usesIssues = choice.kind !== 'none';
-    $('title-group').hidden = usesIssues;
-    $('labels-group').hidden = usesIssues;
-    $('issue-group').hidden = !usesIssues;
-    $('new-issue-form').hidden = true;
+    $('project-input').hidden = usesIssues;
+    $('issue-select').hidden = !usesIssues;
     setNote('issue-note', '');
+    renderTaskView();
     if (!usesIssues) return;
 
     const select = $('issue-select');
     if (!github.issues.has(value)) {
-        select.replaceChildren(new Option('Loading issues…', ''));
+        select.replaceChildren(new Option('Issue (loading…)', ''));
         try {
             const issues = choice.kind === 'project'
                 ? await githubApi.listProjectIssues(choice.id)
@@ -620,7 +639,7 @@ async function onProjectChange() {
             github.issues.set(value, issues);
         } catch (error) {
             console.error(error);
-            select.replaceChildren(new Option('Error loading issues', ''));
+            select.replaceChildren(new Option('Issue (failed to load)', ''));
             return;
         }
         if ($('project-select').value !== value) return;  // changed while loading
@@ -631,9 +650,9 @@ async function onProjectChange() {
 function renderIssueOptions(selectedId = '') {
     const issues = selectedIssues();
     $('issue-select').replaceChildren(
-        new Option(issues.length ? '-- Choose an issue --' : '-- No open issues --', ''),
+        new Option(issues.length ? 'Issue' : 'Issue (none open)', ''),
         new Option('+ New issue', NEW_ISSUE),
-        ...issues.map(i => new Option(issueLabel(i), i.id)),
+        ...issues.map(i => endFirst(issueLabel(i), i.id)),
     );
     $('issue-select').value = selectedId;
     onIssueChange();
@@ -646,8 +665,8 @@ function selectedIssue() {
 
 async function onIssueChange() {
     const value = $('issue-select').value;
-    $('new-issue-form').hidden = value !== NEW_ISSUE;
     setNote('issue-note', '');
+    renderTaskView();
     if (value === NEW_ISSUE) {
         showNewIssueForm();
         return;
@@ -686,40 +705,41 @@ function showNewIssueForm() {
         }
         repoSelect.replaceChildren(...repos.map(r => new Option(r.name, r.id)));
         repoSelect.value = defaultRepoId(issues, repos) ?? '';
-        $('new-issue-repo-group').hidden = false;
+        $('new-issue-repo').hidden = false;
         loadCreateInfo(repoSelect.value);
     } else {
-        $('new-issue-repo-group').hidden = true;
+        $('new-issue-repo').hidden = true;
         loadCreateInfo(choice.id);
     }
+    $('new-issue-dialog').showModal();
     $('new-issue-title').focus();
 }
 
 // Fills type, epic and estimate for the chosen repo. Personal repos have none of them.
 async function loadCreateInfo(repoId) {
     createInfo = null;
-    for (const group of ['new-issue-type-group', 'new-issue-epic-group', 'new-issue-estimate-group']) {
-        $(group).hidden = true;
+    for (const id of ['new-issue-type', 'new-issue-epic', 'new-issue-estimate']) {
+        $(id).hidden = true;
     }
     if (!repoId) return;
     try {
         const info = await githubApi.getRepoCreateInfo(repoId, CREATED_LABEL.name);
         const epics = info.org ? await githubApi.listOrgEpics(info.org) : [];
-        if (!$('new-issue-form').hidden && currentNewIssueRepo() !== repoId) return;  // repo changed meanwhile
+        if ($('new-issue-dialog').open && currentNewIssueRepo() !== repoId) return;  // repo changed meanwhile
         createInfo = { ...info, epics };
 
         if (info.issueTypes.length) {
             $('new-issue-type').replaceChildren(...info.issueTypes.map(t => new Option(t.name, t.id)));
             const task = info.issueTypes.find(t => t.name === DEFAULT_ISSUE_TYPE);
             if (task) $('new-issue-type').value = task.id;
-            $('new-issue-type-group').hidden = false;
+            $('new-issue-type').hidden = false;
         }
         if (info.org) {
-            $('new-issue-epic').replaceChildren(new Option('-- No epic --', ''),
-                ...epics.map(e => new Option(issueLabel(e), e.id)));
-            $('new-issue-epic-group').hidden = false;
+            $('new-issue-epic').replaceChildren(new Option('No epic', ''),
+                ...epics.map(e => endFirst(issueLabel(e), e.id)));
+            $('new-issue-epic').hidden = false;
         }
-        $('new-issue-estimate-group').hidden = !estimateField();
+        $('new-issue-estimate').hidden = !estimateField();
     } catch (error) {
         console.error(error);
         setNote('new-issue-status', `Couldn't load repo details: ${error.message}`);
@@ -762,8 +782,8 @@ async function createIssue() {
         const issue = await githubApi.createIssue({
             repoId: createInfo.repoId,
             title,
-            issueTypeId: $('new-issue-type-group').hidden ? null : $('new-issue-type').value,
-            parentIssueId: $('new-issue-epic-group').hidden ? null : $('new-issue-epic').value,
+            issueTypeId: $('new-issue-type').hidden ? null : $('new-issue-type').value,
+            parentIssueId: $('new-issue-epic').hidden ? null : ($('new-issue-epic').value || null),
             projectId: choice.kind === 'project' ? choice.id : null,
             labelIds: [await ensureCreatedLabel()],
             assigneeIds: github.viewer ? [github.viewer.id] : [],
@@ -772,6 +792,7 @@ async function createIssue() {
         const key = $('project-select').value;
         github.issues.set(key, [issue, ...(github.issues.get(key) ?? [])]);
         renderIssueOptions(issue.id);
+        $('new-issue-dialog').close();
     } catch (error) {
         console.error(error);
         setNote('new-issue-status', `Couldn't create the issue: ${error.message}`);
@@ -812,6 +833,39 @@ async function logToGithub(issue, hours) {
         console.error(error);
         show(`GitHub update failed (${error.message}). It will be retried next time.`);
     }
+}
+
+// --- task VIEW: the GitHub issue, or the local task's details ---
+
+function issueUrl(issue) {
+    return `https://github.com/${issue.repo}/issues/${issue.number}`;
+}
+
+function renderTaskView() {
+    const usesIssues = parseProjectChoice($('project-select').value).kind !== 'none';
+    $('task-view-button').disabled = usesIssues && !selectedIssue();
+}
+
+function viewTask() {
+    if (parseProjectChoice($('project-select').value).kind !== 'none') {
+        const issue = selectedIssue();
+        if (issue) window.open(issueUrl(issue), '_blank', 'noopener');
+        return;
+    }
+    $('task-title').value = $('project-input').value;
+    $('task-dialog').showModal();
+    $('task-title').focus();
+}
+
+// Closes on Esc (built in) and on a click outside the dialog's box. A click
+// on the backdrop has the dialog itself as its target.
+function lightDismiss(dialog, canClose = () => true) {
+    dialog.addEventListener('click', (e) => {
+        if (e.target !== dialog || !canClose()) return;
+        const r = dialog.getBoundingClientRect();
+        const inside = e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
+        if (!inside) dialog.close();
+    });
 }
 
 // --- tracked session ---
@@ -1039,6 +1093,22 @@ function wireEvents() {
     on('issue-select', 'change', onIssueChange);
     on('new-issue-repo', 'change', () => loadCreateInfo($('new-issue-repo').value));
     click('create-issue-button', createIssue);
+    click('new-issue-cancel-button', () => $('new-issue-dialog').close());
+    // Closing without creating leaves "+ New issue" unselected again.
+    on('new-issue-dialog', 'close', () => {
+        if ($('issue-select').value === NEW_ISSUE) {
+            $('issue-select').value = '';
+            onIssueChange();
+        }
+    });
+    click('task-view-button', viewTask);
+    click('task-done-button', () => $('task-dialog').close());
+    on('task-dialog', 'close', () => { $('project-input').value = $('task-title').value.trim(); });
+    enter('task-title', () => $('task-dialog').close());
+    enter('labels-input', () => $('task-dialog').close());
+    for (const dialog of document.querySelectorAll('dialog')) {
+        lightDismiss(dialog, dialog.id === 'build-dialog' ? () => !$('build-close-button').disabled || $('build-output').hidden : undefined);
+    }
 
     // Playlist screen
     click('playlist-back-button', () => {

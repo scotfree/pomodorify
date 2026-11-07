@@ -8,6 +8,7 @@
 
 const API_URL = 'https://www.youtube.com/iframe_api';
 const READY_TIMEOUT_MS = 15000;
+const RESTART_AFTER_S = 3;
 
 export const YT_STATE = { UNSTARTED: -1, ENDED: 0, PLAYING: 1, PAUSED: 2, BUFFERING: 3, CUED: 5 };
 
@@ -102,6 +103,24 @@ export function createYoutubePlayback({
             last = null;
             player.loadVideoById(ids[0]);
             emit({ playing: false, trackIndex: 0, ended: false });
+        },
+
+        // Skips to the next track; past the last one, the session ends.
+        async next() {
+            if (active) advance();
+        },
+
+        // Back to the start of this track, or to the previous track if this
+        // one has only just started (like most players).
+        async previous() {
+            if (!active) return;
+            if (index === 0 || player.getCurrentTime() > RESTART_AFTER_S) {
+                player.seekTo(0, true);
+                return;
+            }
+            index--;
+            player.loadVideoById(ids[index]);
+            emit({ playing: false, trackIndex: index, ended: false });
         },
 
         async pause() {

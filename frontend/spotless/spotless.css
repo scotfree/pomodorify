@@ -16,14 +16,6 @@
     background: rgba(255, 255, 255, 0.2);
 }
 
-#start-button {
-    background: #1db954;
-}
-
-#start-button:hover:not(:disabled) {
-    background: #1ed760;
-}
-
 .note {
     font-size: 0.9rem;
     opacity: 0.8;
@@ -65,7 +57,7 @@
 #player-wrap {
     display: flex;
     justify-content: center;
-    margin-top: 1rem;
+    margin-bottom: 1rem;
 }
 
 #player-wrap iframe {
@@ -77,14 +69,6 @@
     position: fixed;
     left: -10000px;
     top: 0;
-}
-
-.replay {
-    margin-top: 1.5rem;
-}
-
-.totals {
-    margin-top: 1.5rem;
 }
 
 .github-settings {
@@ -106,22 +90,23 @@
     border-radius: 8px;
 }
 
-.totals table {
+.totals-table {
+    table-layout: fixed;
     width: 100%;
     border-collapse: collapse;
     margin-bottom: 0.75rem;
     font-variant-numeric: tabular-nums;
 }
 
-.totals th,
-.totals td {
+.totals-table th,
+.totals-table td {
     text-align: left;
     padding: 0.35rem 0.5rem;
     border-bottom: 1px solid rgba(255, 255, 255, 0.15);
 }
 
-.totals th:last-child,
-.totals td:last-child {
+.totals-table th:last-child,
+.totals-table td:last-child {
     text-align: right;
 }
 
@@ -147,7 +132,7 @@
     border-color: #8b008b;
 }
 
-.build-dialog {
+.popup {
     width: min(680px, calc(100vw - 2rem));
     max-height: calc(100vh - 2rem);
     padding: 1.5rem;
@@ -160,16 +145,17 @@
     text-align: center;
 }
 
-.build-dialog::backdrop {
+.popup::backdrop {
     background: rgba(10, 10, 20, 0.6);
     backdrop-filter: blur(3px);
 }
 
-.build-dialog input {
+.popup input:not([type="checkbox"]):not([type="radio"]) {
     max-width: none;
+    box-sizing: border-box;
 }
 
-.build-dialog textarea {
+.popup textarea {
     width: 100%;
     box-sizing: border-box;
     padding: 0.75rem;
@@ -183,7 +169,7 @@
     resize: vertical;
 }
 
-.build-dialog textarea:focus {
+.popup textarea:focus {
     outline: none;
     box-shadow: 0 0 20px #8b008b;
 }
@@ -236,4 +222,253 @@
     margin-bottom: 1rem;
     border: 1px solid rgba(255, 255, 255, 0.25);
     border-radius: 8px;
+}
+
+/* --- Layout: brand, stacked panels, screens --- */
+
+.brand {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    margin-bottom: 1.5rem;
+}
+
+.brand .logo {
+    width: 64px;
+    height: 64px;
+}
+
+.brand h1 {
+    margin: 0;
+    font-size: 2rem;
+}
+
+.panel {
+    margin-bottom: 1.25rem;
+    padding: 1.25rem;
+    border: 1px solid rgba(230, 230, 250, 0.2);
+    border-radius: 12px;
+    background: rgba(25, 25, 35, 0.55);
+}
+
+.panel-head {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin: 0 0 1rem;
+    font-size: 1.3rem;
+}
+
+.panel-head .icon {
+    width: 36px;
+    height: 36px;
+}
+
+/* The Settings panel is one big button that looks like the other headers. */
+.panel-button,
+.panel-button:hover {
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    background: none;
+    border: none;
+    box-shadow: none;
+    transform: none;
+    color: #e6e6fa;
+    text-shadow: 0 0 10px #8b008b;
+    letter-spacing: 2px;
+    font-weight: 700;
+}
+
+.panel-button:hover {
+    opacity: 0.85;
+}
+
+.panel .form-group {
+    margin-bottom: 1rem;
+}
+
+.inline-row {
+    display: flex;
+    gap: 0.5rem;
+    align-items: stretch;
+    justify-content: center;
+}
+
+.inline-row select,
+.inline-row input {
+    flex: 1;
+    min-width: 0;
+    max-width: none;
+}
+
+.inline-row button {
+    margin: 0;
+    padding: 0.75rem 1.25rem;
+}
+
+.start-button {
+    width: 100%;
+    max-width: 300px;
+}
+
+.stack {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.stack button {
+    width: 100%;
+    max-width: 300px;
+}
+
+.list-button,
+.list-button:hover {
+    background: linear-gradient(45deg, #8b008b, #a020a0);
+    border-color: #8b008b;
+}
+
+.danger-button,
+.danger-button:hover {
+    background: linear-gradient(45deg, #b3261e, #d84339);
+    border-color: #b3261e;
+}
+
+.back-link {
+    display: block;
+    margin: 0 0 1rem;
+    padding: 0.6rem 1.25rem;
+}
+
+/* What the session logs to (#20). */
+.logging-to {
+    font-weight: 700;
+    margin: 0.25rem 0 0.75rem;
+}
+
+#pomo-running .session-clock {
+    font-size: 3rem;
+    margin: 0.25rem 0;
+}
+
+/* The only small buttons: ⏮ ⏯ ⏹ ⏭. */
+.mini-controls {
+    display: flex;
+    justify-content: center;
+    gap: 0.5rem;
+    margin: 0.75rem 0;
+}
+
+.mini-controls button {
+    width: 3rem;
+    height: 3rem;
+    padding: 0;
+    font-size: 1.2rem;
+    letter-spacing: 0;
+}
+
+.mini-controls button[data-action="stop"] {
+    background: linear-gradient(45deg, #4a90e2, #357abd);
+    border-color: #4a90e2;
+}
+
+.totals-scroll {
+    max-height: 14rem;
+    overflow-y: auto;
+    margin-bottom: 0.5rem;
+}
+
+.totals-table th:last-child,
+.totals-table td:last-child {
+    width: 4.5rem;
+}
+
+.totals-table td:first-child {
+    overflow-wrap: anywhere;
+}
+
+.totals-table thead th {
+    position: sticky;
+    top: 0;
+    background: rgba(25, 25, 35, 0.95);
+}
+
+.track-item.current {
+    background: rgba(29, 185, 84, 0.25);
+}
+
+/* --- Popups --- */
+
+.popup h3 {
+    margin: 1.5rem 0 0.5rem;
+    text-align: left;
+    font-size: 1rem;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+}
+
+.popup .form-group {
+    margin-bottom: 1rem;
+}
+
+.sliders input[type="range"] {
+    width: 100%;
+    max-width: none;
+    padding: 0;
+    border: none;
+    box-shadow: none;
+    background: transparent;
+    accent-color: #a020a0;
+    margin-bottom: 0.75rem;
+}
+
+.checks {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+    gap: 0.5rem 1rem;
+    margin: 0 0 1rem;
+    padding: 0;
+    border: none;
+    text-align: left;
+}
+
+.checks label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0;
+    text-transform: none;
+    font-weight: 400;
+    letter-spacing: 0;
+    text-shadow: none;
+}
+
+.checks input {
+    width: auto;
+    margin: 0;
+    accent-color: #a020a0;
+}
+
+@media (max-width: 768px) {
+    .container {
+        margin: 0.5rem;
+        padding: 1rem;
+    }
+
+    .brand {
+        flex-direction: column;
+        gap: 0.25rem;
+    }
+
+    .brand .logo {
+        width: 56px;
+        height: 56px;
+    }
+
+    .brand h1 {
+        font-size: 1.5rem;
+    }
 }

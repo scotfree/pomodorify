@@ -47,12 +47,15 @@ export function createPlaylistStore({
 
         get: (id) => read().find(p => p.id === id) ?? null,
 
-        save({ name, query = '', minutes = null, tracks }) {
+        // source: how it was made, e.g. { kind: 'search', query, options } or
+        // { kind: 'list' }. Older playlists only have `query`.
+        save({ name, query = '', minutes = null, tracks, source = null }) {
             const playlist = {
                 id: newId(),
                 name: String(name ?? '').trim() || query || 'Untitled',
                 query,
                 minutes,
+                ...(source ? { source } : {}),
                 createdAt: now(),
                 tracks: tracks.map(cleanTrack),
             };

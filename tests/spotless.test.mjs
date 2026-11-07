@@ -3,7 +3,7 @@ import { parseIsoDuration, videosToTracks, createYoutubeApi, MIN_TRACK_MS, MAX_T
 import { createPlaylistStore, PLAYLISTS_KEY } from '../frontend/spotless/playlists.js';
 import { createYoutubeSettings, KEY_STORAGE } from '../frontend/spotless/settings.js';
 import { createYoutubePlayback, YT_STATE } from '../frontend/spotless/playback/youtube.js';
-import { classifyVideos, SONG_RANGE } from '../frontend/spotless/youtube-api.js';
+import { classifyVideos, SONG_RANGE, searchQuery, durationBuckets, describeSearchOptions } from '../frontend/spotless/youtube-api.js';
 import {
     buildPlaylist, parseLines, songQuery, spotifyTrackId, shuffle, cachedSearch, fetchSpotifyTitle,
     FILLER_QUERY, CACHE_KEY,
@@ -118,7 +118,7 @@ function searchFetch(idsFor) {
 
 const idList = (prefix, n) => Array.from({ length: n }, (_, i) => `${prefix}${i}`);
 
-test('first pass: 4-20 min Music videos with the key and embeddable filters; stops when enough', async () => {
+test('first pass: Music, short bucket, with the key, embeddable and SafeSearch; stops when enough', async () => {
     const fetchFn = searchFetch(() => idList('a', 20));
     const tracks = await createYoutubeApi(() => 'KEY', fetchFn).searchTracks('lofi beats');
     assert.equal(tracks.length, 20);
@@ -128,22 +128,57 @@ test('first pass: 4-20 min Music videos with the key and embeddable filters; sto
     assert.equal(search.searchParams.get('type'), 'video');
     assert.equal(search.searchParams.get('videoEmbeddable'), 'true');
     assert.equal(search.searchParams.get('videoCategoryId'), '10');
-    assert.equal(search.searchParams.get('videoDuration'), 'medium');
+    assert.equal(search.searchParams.get('videoDuration'), 'short');
+    assert.equal(search.searchParams.get('safeSearch'), 'none');  // Allow explicit is on by default
     assert.equal(fetchFn.calls[1].searchParams.get('id'), idList('a', 20).join(','));
     assert.equal(fetchFn.calls.length, 2);  // 101 quota units
 });
 
-test('too few: adds short Music, then medium of any category, without duplicates', async () => {
+test('too few: each bucket in Music, then outside it, without duplicates', async () => {
     const fetchFn = searchFetch((u) => {
         const p = u.searchParams;
-        if (p.get('videoDuration') === 'short') return ['b', 'a0'];
-        return p.has('videoCategoryId') ? ['a0'] : ['c', 'b'];
+        if (!p.has('videoCategoryId')) return ['c', 'b'];
+        return p.get('videoDuration') === 'short' ? ['a0'] : ['b', 'a0'];
     });
     const tracks = await createYoutubeApi(() => 'KEY', fetchFn).searchTracks('rain sounds');
     assert.deepEqual(tracks.map(t => t.id), ['a0', 'b', 'c']);
     const searches = fetchFn.calls.filter(u => u.pathname.endsWith('/search')).map(u => u.searchParams);
     assert.deepEqual(searches.map(p => [p.get('videoCategoryId'), p.get('videoDuration')]),
-        [['10', 'medium'], ['10', 'short'], [null, 'medium']]);
+        [['10', 'short'], ['10', 'medium'], [null, 'short'], [null, 'medium']]);
+});
+
+test('options: search words, SafeSearch, and the exact length range', async () => {
+    let seenQ = null;
+    let seenSafe = null;
+    const fetchFn = fakeFetch((u) => {
+        if (u.pathname.endsWith('/search')) {
+            seenQ = u.searchParams.get('q');
+            seenSafe = u.searchParams.get('safeSearch');
+            return { body: { items: ['short', 'ok', 'long'].map(id => ({ id: { videoId: id } })) } };
+        }
+        const len = { short: 'PT2M', ok: 'PT6M', long: 'PT9M' };
+        return { body: { items: u.searchParams.get('id').split(',').map(id => video(id, len[id])) } };
+    });
+    const tracks = await createYoutubeApi(() => 'KEY', fetchFn).searchTracks('jazz', {
+        minMinutes: 5, maxMinutes: 8, instrumental: true, explicit: false, official: true, noLive: true, noCovers: true,
+    });
+    assert.equal(seenQ, 'jazz instrumental "official audio" -live -cover -remix');
+    assert.equal(seenSafe, 'moderate');
+    assert.deepEqual(tracks.map(t => t.id), ['ok']);
+});
+
+test('durationBuckets picks the YouTube length buckets a range needs', () => {
+    const m = 60000;
+    assert.deepEqual(durationBuckets(2 * m, 5 * m), ['short', 'medium']);
+    assert.deepEqual(durationBuckets(1 * m, 4 * m), ['short']);
+    assert.deepEqual(durationBuckets(4 * m, 10 * m), ['medium']);
+});
+
+test('searchQuery with no options is the text; describeSearchOptions summarizes', () => {
+    assert.equal(searchQuery('  lofi  '), 'lofi');
+    assert.equal(describeSearchOptions(), '2–5 min');
+    assert.equal(describeSearchOptions({ instrumental: true, explicit: false, noLive: true }),
+        '2–5 min · instrumental · no explicit · no live');
 });
 
 test('API errors surface the message and reason', async () => {
@@ -200,6 +235,13 @@ test('saving with no tracks throws', () => {
 test('extra track fields are dropped', () => {
     const p = store().save({ name: 'x', tracks: [{ ...TRACKS[0], junk: 1 }] });
     assert.deepEqual(p.tracks, [TRACKS[0]]);
+});
+
+test('save keeps how the playlist was made', () => {
+    const source = { kind: 'search', query: 'lofi', options: { minMinutes: 2, maxMinutes: 5 } };
+    const p = store().save({ name: 'x', query: 'lofi', tracks: TRACKS, source });
+    assert.deepEqual(p.source, source);
+    assert.equal('source' in store().save({ name: 'y', tracks: TRACKS }), false);
 });
 
 test('rename and remove', () => {
@@ -279,6 +321,8 @@ function fakeYT({ ready = true } = {}) {
         pauseVideo() { this.calls.push(['pause']); }
         playVideo() { this.calls.push(['play']); }
         stopVideo() { this.calls.push(['stop']); }
+        seekTo(s) { this.calls.push(['seek', s]); }
+        getCurrentTime() { return this.time ?? 0; }
         fire(data) { this.options.events.onStateChange({ data }); }
         error(data) { this.options.events.onError({ data }); }
     };
@@ -377,6 +421,40 @@ test('pause and resume call the player', async () => {
     await adapter.pause();
     await adapter.resume();
     assert.deepEqual(player.calls.slice(-2), [['pause'], ['play']]);
+});
+
+test('next skips to the next track; past the last it ends the session', async () => {
+    const { adapter, player, changes } = await readyAdapter();
+    await adapter.play(LIST);
+    await adapter.next();
+    assert.deepEqual(player.loaded, ['v1', 'v2']);
+    assert.equal(changes.at(-1).trackIndex, 1);
+    await adapter.next();
+    await adapter.next();
+    assert.deepEqual(changes.at(-1), { playing: false, trackIndex: 2, ended: true });
+});
+
+test('previous restarts the track after 3 s, else goes back one', async () => {
+    const { adapter, player, changes } = await readyAdapter();
+    await adapter.play(LIST);
+    await adapter.previous();                 // first track: restart
+    assert.deepEqual(player.calls.at(-1), ['seek', 0]);
+    await adapter.next();
+    player.time = 10;
+    await adapter.previous();                 // 10 s in: restart
+    assert.deepEqual(player.calls.at(-1), ['seek', 0]);
+    assert.deepEqual(player.loaded, ['v1', 'v2']);
+    player.time = 1;
+    await adapter.previous();                 // just started: back to v1
+    assert.deepEqual(player.loaded, ['v1', 'v2', 'v1']);
+    assert.equal(changes.at(-1).trackIndex, 0);
+});
+
+test('next and previous do nothing when no session is playing', async () => {
+    const { adapter, player } = await readyAdapter();
+    await adapter.next();
+    await adapter.previous();
+    assert.deepEqual(player.calls, []);
 });
 
 test('a second play starts the new list from the top', async () => {

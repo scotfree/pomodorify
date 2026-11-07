@@ -105,6 +105,7 @@
                 <p>Source: <span id="preview-source-name"></span></p>
                 <p>Duration: <span id="preview-duration"></span></p>
                 <p>Number of tracks: <span id="preview-track-count"></span></p>
+                <p id="preview-labels" hidden>Labels: <span id="preview-labels-list"></span></p>
             </div>
             <div class="track-list" id="preview-tracks"></div>
 
@@ -132,6 +133,10 @@
                 <label for="project-input">Title (optional, for logging time locally):</label>
                 <input type="text" id="project-input" list="project-list" placeholder="No title: time isn't logged">
                 <datalist id="project-list"></datalist>
+            </div>
+            <div class="form-group" id="labels-group">
+                <label for="labels-input">Labels (optional, comma-separated):</label>
+                <input type="text" id="labels-input" placeholder="e.g. writing, planning">
             </div>
 
             <div class="form-group" id="issue-group" hidden>
@@ -188,6 +193,7 @@
             </div>
             <div id="session-done" hidden>
                 <p id="session-summary"></p>
+                <p id="session-labels" class="note" hidden></p>
                 <p id="session-github" class="note"></p>
                 <button id="new-session-button">New Session</button>
             </div>

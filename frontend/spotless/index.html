@@ -16,12 +16,6 @@
             <h1>Pomodorify <span class="badge">spotless</span></h1>
         </header>
 
-        <!-- YouTube player, under the header so it sits next to the controls on both
-             screens. Outside the screens so the iframe is never
-             inside display: none (it must be laid out to load) and never moved
-             (that reloads it). Parked off-screen except during a session. -->
-        <div id="player-wrap" class="parked"><div id="player"></div></div>
-
         <!-- First run without a key -->
         <div id="key-screen" hidden>
             <h2>Music from YouTube, no Spotify needed.</h2>
@@ -63,17 +57,19 @@
                     <button id="start-button" class="start-button" disabled>START</button>
                 </div>
 
-                <!-- While a session runs (and right after it ends) -->
+                <!-- While a session runs (and right after it ends). Same height as
+                     the setup above, so the panel doesn't jump. -->
                 <div id="pomo-running" hidden>
-                    <p class="logging-to" id="running-task"></p>
-                    <div class="session-clock" id="session-elapsed">0:00</div>
-                    <div class="session-now">
-                        <div class="track-name" id="session-track-name">Starting…</div>
-                        <div class="track-artist" id="session-track-artist"></div>
+                    <div id="running-info">
+                        <p class="logging-to" id="running-task"></p>
+                        <button id="running-playlist" class="link-button" title="View the playlist"></button>
+                        <div class="session-now">
+                            <div class="track-name" id="session-track-name">Starting…</div>
+                            <div class="track-artist" id="session-track-artist"></div>
+                        </div>
+                        <p class="session-progress" id="session-progress"></p>
+                        <button id="running-stop-button" class="back-button">STOP</button>
                     </div>
-                    <p class="session-progress" id="session-progress"></p>
-                    <div class="mini-controls" data-controls></div>
-                    <button id="running-view-button" class="back-button">VIEW</button>
                     <div id="session-done" hidden>
                         <p id="session-summary"></p>
                         <p id="session-labels" class="note" hidden></p>
@@ -136,13 +132,22 @@
             </div>
             <div class="track-list" id="playlist-tracks"></div>
             <p class="logging-to" id="playlist-task"></p>
-            <div class="mini-controls" data-controls id="playlist-controls" hidden></div>
             <div class="button-group" id="playlist-actions">
                 <button id="playlist-start-button" class="start-button" disabled>START</button>
                 <button id="delete-button" class="back-button">DELETE</button>
             </div>
         </div>
 
+
+        <!-- Now playing: the YouTube player and its controls. Outside the
+             screens, so it stays at the bottom on both and the iframe is never
+             inside display: none (it must be laid out to load) or moved (that
+             reloads it). Parked off-screen except during a session. -->
+        <section class="panel parked" id="now-playing">
+            <h2 class="panel-head"><img class="icon" src="icons/tomato.png" alt="">Now playing</h2>
+            <div id="player-wrap"><div id="player"></div></div>
+            <div class="mini-controls" data-controls></div>
+        </section>
     </div>
 
     <dialog id="search-dialog" class="popup">

@@ -36,6 +36,7 @@ import { createPlaylistStore } from './store.js';
 import { filterTracks, rejection, searchQuery, describeSearchOptions, describeShared, SONG_RANGE } from './search.js';
 import { buildPlaylist, parseLines, fetchSpotifyTitle, FILLER_QUERY } from './build.js';
 import { parseLabels, fetchIssueLabels, formatLabelCounts } from './labels.js';
+import { enhanceSelect } from './combo.js';
 
 const REPLAY_ORDER_KEY = 'track_replay_order';
 
@@ -1308,6 +1309,9 @@ function wireEvents() {
 async function boot() {
     setRandomBackground();
     buildControls();
+    // Type to filter: there can be a lot of projects, repos and issues.
+    enhanceSelect($('project-select'));
+    enhanceSelect($('issue-select'));
     wireEvents();
 
     try {

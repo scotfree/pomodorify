@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { filterItems } from '../frontend/track/combo.js';
 import { createLocalLogger } from '../frontend/track/loggers/local.js';
 import { createSessionClock, createSession, formatClock, remainingMs } from '../frontend/track/session.js';
 import { createAuth, hasScopes, SCOPES, STORAGE_KEYS } from '../frontend/track/auth.js';
@@ -608,6 +609,25 @@ await testAsync('short pool: other results, then bluegrass; no track twice', asy
     assert.deepEqual(tracks.map(t => t.uri), [T(1), T(2), T(5), T(6)].map(t => t.uri));
     assert.deepEqual(log.map(e => e.source ?? e.kind), ['line', 'results', 'bluegrass']);
     assert.equal(SONG_RANGE.maxMinutes, 12);
+});
+
+console.log('\ntype-to-filter dropdowns');
+
+test('filterItems: every typed word must appear, any order and case, group names count', () => {
+    const items = [
+        { text: 'scotfree/pomodorify#20 Show the task while running', value: 'a', group: 'Issues' },
+        { text: 'scotfree/atlas#4 Fix the map legend', value: 'b', group: 'Issues' },
+        { text: '‎scotfree/pomodorify#19 Store the input list‎', value: 'c', group: null },
+        { text: 'Stewardship Atlas roadmap', value: 'd', group: 'Projects' },
+    ];
+    const pick = (q) => filterItems(items, q).map(i => i.value);
+    assert.deepEqual(pick(''), ['a', 'b', 'c', 'd']);
+    assert.deepEqual(pick('pomo'), ['a', 'c']);
+    assert.deepEqual(pick('TASK show'), ['a']);
+    assert.deepEqual(pick('  atlas  '), ['b', 'd']);
+    assert.deepEqual(pick('projects atlas'), ['d']);
+    assert.deepEqual(pick('#19'), ['c']);
+    assert.deepEqual(pick('nothing here'), []);
 });
 
 // --- session display helpers ---

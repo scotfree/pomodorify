@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { filterItems } from '../frontend/spotless/combo.js';
 import { parseIsoDuration, videosToTracks, createYoutubeApi, MIN_TRACK_MS, MAX_TRACK_MS } from '../frontend/spotless/youtube-api.js';
 import { createPlaylistStore, PLAYLISTS_KEY } from '../frontend/spotless/playlists.js';
 import { createYoutubeSettings, KEY_STORAGE } from '../frontend/spotless/settings.js';
@@ -744,6 +745,25 @@ test('playlist store counts labels per playlist, and they survive export/import'
     const other = store();
     other.importJson(s.exportJson());
     assert.deepEqual(other.get(a.id).labels, { bug: 2, ui: 1 });
+});
+
+section('type-to-filter dropdowns');
+
+test('filterItems: every typed word must appear, any order and case, group names count', () => {
+    const items = [
+        { text: 'scotfree/pomodorify#20 Show the task while running', value: 'a', group: 'Issues' },
+        { text: 'scotfree/atlas#4 Fix the map legend', value: 'b', group: 'Issues' },
+        { text: '‎scotfree/pomodorify#19 Store the input list‎', value: 'c', group: null },
+        { text: 'Stewardship Atlas roadmap', value: 'd', group: 'Projects' },
+    ];
+    const pick = (q) => filterItems(items, q).map(i => i.value);
+    assert.deepEqual(pick(''), ['a', 'b', 'c', 'd']);
+    assert.deepEqual(pick('pomo'), ['a', 'c']);
+    assert.deepEqual(pick('TASK show'), ['a']);
+    assert.deepEqual(pick('  atlas  '), ['b', 'd']);
+    assert.deepEqual(pick('projects atlas'), ['d']);
+    assert.deepEqual(pick('#19'), ['c']);
+    assert.deepEqual(pick('nothing here'), []);
 });
 
 for (const run of pending) await run();

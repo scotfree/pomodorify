@@ -29,6 +29,7 @@ import { createPlaylistStore } from './playlists.js';
 import { createYoutubePlayback } from './playback/youtube.js';
 import { buildPlaylist, parseLines, cachedSearch, fetchSpotifyTitle } from './build.js';
 import { parseLabels, fetchIssueLabels, formatLabelCounts } from './labels.js';
+import { enhanceSelect } from './combo.js';
 
 const BACKGROUNDS = [
     '../assets/tta_icetroid.jpg',
@@ -1171,6 +1172,9 @@ function enterApp() {
 function boot() {
     setRandomBackground();
     buildControls();
+    // Type to filter: there can be a lot of projects, repos and issues.
+    enhanceSelect($('project-select'));
+    enhanceSelect($('issue-select'));
     wireEvents();
     if (youtubeSettings.getKey()) enterApp();
     else showKeyScreen();

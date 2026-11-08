@@ -1,0 +1,152 @@
+/* The help page, on top of ../style.css. Panel look copied from the apps
+   (spotless.css / track.css). */
+
+[hidden] {
+    display: none !important;
+}
+
+.container {
+    background: rgba(25, 25, 35, 0.1);
+    text-align: left;
+}
+
+.brand {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    margin-bottom: 0.5rem;
+}
+
+.brand .logo {
+    width: 64px;
+    height: 64px;
+}
+
+.brand h1 {
+    margin: 0;
+    font-size: 2rem;
+}
+
+.badge {
+    font-size: 0.9rem;
+    font-weight: 600;
+    vertical-align: middle;
+    padding: 0.15rem 0.5rem;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.panel {
+    margin-bottom: 1.25rem;
+    padding: 1.25rem;
+    border: 1px solid rgba(230, 230, 250, 0.2);
+    border-radius: 12px;
+    background: rgba(25, 25, 35, 0.55);
+    scroll-margin-top: 1rem;
+}
+
+.panel-head {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin: 0 0 0.75rem;
+    font-size: 1.2rem;
+}
+
+.panel-head .icon {
+    width: 32px;
+    height: 32px;
+}
+
+.panel p,
+.panel li {
+    line-height: 1.5;
+}
+
+.panel ol {
+    padding-left: 1.25rem;
+    margin: 0;
+}
+
+.panel li {
+    margin-bottom: 1rem;
+}
+
+.shot {
+    display: block;
+    width: 100%;
+    max-width: 380px;
+    margin: 0.5rem 0 0;
+    border-radius: 10px;
+    border: 1px solid rgba(230, 230, 250, 0.25);
+}
+
+.versions {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+    gap: 0.75rem;
+}
+
+.version {
+    display: block;
+    padding: 0.9rem;
+    border: 1px solid rgba(230, 230, 250, 0.25);
+    border-radius: 10px;
+    color: #e6e6fa;
+    text-decoration: none;
+}
+
+.version:hover {
+    border-color: #e6e6fa;
+}
+
+.version strong {
+    display: block;
+    margin-bottom: 0.25rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.toc {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.5rem 1rem;
+    margin: 0 0 1.25rem;
+    font-size: 0.9rem;
+}
+
+.toc a,
+.panel a {
+    color: #b9f6ca;
+}
+
+@media (max-width: 768px) {
+    .container {
+        margin: 0.5rem;
+        padding: 1rem;
+    }
+
+    .brand {
+        flex-direction: column;
+        gap: 0.25rem;
+    }
+
+    .brand .logo {
+        width: 56px;
+        height: 56px;
+    }
+
+    .brand h1 {
+        font-size: 1.5rem;
+    }
+
+    .panel {
+        padding: 1rem;
+    }
+
+    .panel-head {
+        font-size: 1.05rem;
+    }
+}

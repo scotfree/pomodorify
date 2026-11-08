@@ -10,6 +10,8 @@ Pomodorify is a pure client-side static web app. No build step, no package manag
 - **Track app** (`/track/index.html`, `frontend/track/`): v2 of the design in `DESIGN_V2.md`. It plays the playlist in the tab via the Web Playback SDK, runs a session clock, logs time per project to `localStorage`, and offers JSON/CSV export and replay of saved `POMO_` playlists. It may eventually replace the root app.
 - **Spotless app** (`/spotless/index.html`, `frontend/spotless/`): a prototype of the track app with YouTube instead of Spotify, so it works for anyone (no Spotify developer-mode allowlist). Search YouTube, fit the results to a duration, name the playlist and keep it in `localStorage` (`spotless_playlists`, exportable/importable as a JSON file), play it in the tab with the IFrame Player API. Needs a YouTube Data API v3 key: pasted into the page (`spotless_youtube_key`) or baked in as `BUILT_IN_KEY` in `spotless/settings.js` (restrict it to the site's referrers).
 
+- **Help page** (`/help/index.html`, `frontend/help/`): one page for both Spotless and the track app (the general idea, then short illustrated steps for the core tasks). Every panel in both apps has a small `?` (`.help-link`, top right) that opens it in a new tab at the matching section (`#start`, `#task`, `#create`, `#spotify`, `#github`); the track login screen links to `#spotify`. Neither app imports anything from it. Screenshots are JPEGs captured from the real pages with stubbed services: re-run `tools/help-screenshots.cjs` after UI changes.
+
 Deployed at `https://pomodorifi.es`.
 
 ## CRITICAL: keep the two apps separate

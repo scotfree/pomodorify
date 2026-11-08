@@ -31,6 +31,7 @@
         <div id="home-screen" hidden>
             <!-- 1. Pomodoro: pick a playlist and a task, start, control -->
             <section class="panel" id="pomo-panel">
+                <a class="help-link" href="../help/index.html#start" target="_blank" rel="noopener" title="Help" aria-label="Help">?</a>
                 <h2 class="panel-head"><img class="icon" src="icons/tomato.png" alt="">Pomodoro time tracking</h2>
 
                 <div id="pomo-setup">
@@ -81,6 +82,7 @@
 
             <!-- 2. Create playlists -->
             <section class="panel">
+                <a class="help-link" href="../help/index.html#create" target="_blank" rel="noopener" title="Help" aria-label="Help">?</a>
                 <h2 class="panel-head"><img class="icon" src="icons/pencil.png" alt="">Create pomodoro playlists</h2>
                 <div class="inline-row settings-row">
                     <label class="minutes"><input type="number" id="duration" value="25" min="1" max="120" aria-label="Minutes"> min</label>
@@ -96,6 +98,7 @@
 
             <!-- 3. Tasks: logged time -->
             <section class="panel">
+                <a class="help-link" href="../help/index.html#task" target="_blank" rel="noopener" title="Help" aria-label="Help">?</a>
                 <h2 class="panel-head"><img class="icon" src="icons/checkbox.png" alt="">Current tasks</h2>
                 <div class="totals-scroll">
                     <table class="totals-table">
@@ -112,6 +115,7 @@
 
             <!-- 4. Settings -->
             <section class="panel">
+                <a class="help-link" href="../help/index.html#github" target="_blank" rel="noopener" title="Help" aria-label="Help">?</a>
                 <button class="panel-head panel-button" id="settings-open-button">
                     <img class="icon" src="icons/gear.png" alt="">Settings
                 </button>
@@ -144,6 +148,7 @@
              inside display: none (it must be laid out to load) or moved (that
              reloads it). Parked off-screen except during a session. -->
         <section class="panel parked" id="now-playing">
+            <a class="help-link" href="../help/index.html#start" target="_blank" rel="noopener" title="Help" aria-label="Help">?</a>
             <h2 class="panel-head"><img class="icon" src="icons/tomato.png" alt="">Now playing</h2>
             <div id="player-wrap"><div id="player"></div></div>
             <div class="mini-controls" data-controls></div>

@@ -20,11 +20,13 @@
         <div id="login-screen" hidden>
             <p id="login-note" class="note" hidden>Tracked sessions need playback permission. Please log in again.</p>
             <button id="login-button">LOG IN WITH SPOTIFY</button>
+            <p class="note"><a class="login-help" href="../help/index.html#spotify" target="_blank" rel="noopener">What's this?</a></p>
         </div>
 
         <div id="home-screen" hidden>
             <!-- 1. Pomodoro: pick a playlist and a task, start, control -->
             <section class="panel" id="pomo-panel">
+                <a class="help-link" href="../help/index.html#start" target="_blank" rel="noopener" title="Help" aria-label="Help">?</a>
                 <h2 class="panel-head"><img class="icon" src="icons/tomato.png" alt="">Pomodoro time tracking</h2>
 
                 <div id="pomo-setup">
@@ -75,6 +77,7 @@
 
             <!-- 2. Create playlists -->
             <section class="panel">
+                <a class="help-link" href="../help/index.html#create" target="_blank" rel="noopener" title="Help" aria-label="Help">?</a>
                 <h2 class="panel-head"><img class="icon" src="icons/pencil.png" alt="">Create pomodoro playlists</h2>
                 <div class="inline-row settings-row">
                     <label class="minutes"><input type="number" id="duration" value="25" min="1" max="120" aria-label="Minutes"> min</label>
@@ -90,6 +93,7 @@
 
             <!-- 3. Tasks: logged time -->
             <section class="panel">
+                <a class="help-link" href="../help/index.html#task" target="_blank" rel="noopener" title="Help" aria-label="Help">?</a>
                 <h2 class="panel-head"><img class="icon" src="icons/checkbox.png" alt="">Current tasks</h2>
                 <div class="totals-scroll">
                     <table class="totals-table">
@@ -106,6 +110,7 @@
 
             <!-- 4. Settings -->
             <section class="panel">
+                <a class="help-link" href="../help/index.html#github" target="_blank" rel="noopener" title="Help" aria-label="Help">?</a>
                 <button class="panel-head panel-button" id="settings-open-button">
                     <img class="icon" src="icons/gear.png" alt="">Settings
                 </button>
@@ -141,6 +146,7 @@
              screens, so it stays at the bottom on both. Spotify plays audio only,
              so there's no video; parked off-screen except during a session. -->
         <section class="panel parked" id="now-playing">
+            <a class="help-link" href="../help/index.html#start" target="_blank" rel="noopener" title="Help" aria-label="Help">?</a>
             <h2 class="panel-head"><img class="icon" src="icons/tomato.png" alt="">Now playing</h2>
             <div class="session-now">
                 <div class="track-name" id="now-track-name"></div>

@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pomodorify Help</title>
+    <link rel="icon" type="image/png" href="icons/tomato.png">
+    <link rel="stylesheet" href="../style.css">
+    <link rel="stylesheet" href="help.css">
+</head>
+<body>
+    <div id="bg"></div>
+    <div class="container">
+        <header class="brand">
+            <img class="logo" src="icons/tomato.png" alt="">
+            <h1>Pomodorify <span class="badge">help</span></h1>
+        </header>
+
+        <nav class="toc">
+            <a href="#start">Start a playlist</a>
+            <a href="#task">Log a task</a>
+            <a href="#create">New playlist</a>
+            <a href="#spotify">Spotify</a>
+            <a href="#github">GitHub</a>
+        </nav>
+
+        <section class="panel" id="about">
+            <h2 class="panel-head"><img class="icon" src="icons/tomato.png" alt="">What it is</h2>
+            <p>Music sized to one work block. Pick a playlist that lasts about 25 minutes, press start, and
+                work until it ends. Pomodorify can log the time to a task.</p>
+            <div class="versions">
+                <a class="version" href="../spotless/index.html">
+                    <strong>Spotless</strong>
+                    YouTube. No login.
+                </a>
+                <a class="version" href="../track/index.html">
+                    <strong>Track</strong>
+                    Spotify. Needs Premium.
+                </a>
+            </div>
+        </section>
+
+        <section class="panel" id="start">
+            <h2 class="panel-head"><img class="icon" src="icons/tomato.png" alt="">Start a playlist</h2>
+            <ol>
+                <li>Pick a playlist and press START.
+                    <img class="shot" src="img/start-pick.jpg" alt="The Pomodoro panel with a playlist chosen and START">
+                </li>
+                <li>The panel shows the track and time left. STOP ends early.
+                    <img class="shot" src="img/start-running.jpg" alt="The Pomodoro panel during a session">
+                </li>
+                <li>Skip or pause at the bottom.
+                    <img class="shot" src="img/start-now-playing.jpg" alt="The Now playing panel with its controls">
+                </li>
+            </ol>
+        </section>
+
+        <section class="panel" id="task">
+            <h2 class="panel-head"><img class="icon" src="icons/checkbox.png" alt="">Log a task</h2>
+            <ol>
+                <li>Type a task before START. No task, no logging.
+                    <img class="shot" src="img/task-row.jpg" alt="The task field filled in">
+                </li>
+                <li>Optional: VIEW adds labels.
+                    <img class="shot" src="img/task-popup.jpg" alt="The task popup with labels">
+                </li>
+                <li>Time played adds up under Current tasks.
+                    <img class="shot" src="img/task-totals.jpg" alt="The Current tasks panel">
+                </li>
+            </ol>
+        </section>
+
+        <section class="panel" id="create">
+            <h2 class="panel-head"><img class="icon" src="icons/pencil.png" alt="">New playlist from a search</h2>
+            <ol>
+                <li>Set the minutes, then SEARCH.
+                    <img class="shot" src="img/create-panel.jpg" alt="The Create pomodoro playlists panel">
+                </li>
+                <li>Type a search and CREATE.
+                    <img class="shot" src="img/create-search.jpg" alt="The search popup">
+                </li>
+                <li>Your playlist, saved and ready.
+                    <img class="shot" src="img/create-playlist.jpg" alt="The new playlist">
+                </li>
+            </ol>
+        </section>
+
+        <section class="panel" id="spotify">
+            <h2 class="panel-head"><img class="icon" src="icons/gear.png" alt="">Log in to Spotify</h2>
+            <ol>
+                <li>Track only. Press the button and allow access.
+                    <img class="shot" src="img/spotify-login.jpg" alt="The Spotify login screen">
+                </li>
+            </ol>
+        </section>
+
+        <section class="panel" id="github">
+            <h2 class="panel-head"><img class="icon" src="icons/gear.png" alt="">GitHub issue tracking</h2>
+            <ol>
+                <li>Settings: paste a classic token (repo, project, read:org) and SAVE.
+                    <img class="shot" src="img/github-settings.jpg" alt="GitHub in the Settings popup">
+                </li>
+                <li>Pick a project or repo, then type to find the issue.
+                    <img class="shot" src="img/github-pick.jpg" alt="Choosing an issue by typing">
+                </li>
+                <li>START. Hours go to the issue.
+                    <img class="shot" src="img/github-ready.jpg" alt="An issue chosen, ready to start">
+                </li>
+            </ol>
+        </section>
+    </div>
+    <script>
+        // A random background, as in the apps.
+        const backgrounds = ['tta_icetroid.jpg', 'robots.jpeg', 'ringscape.jpeg', 'suits.jpeg', 'redcity.jpeg', 'tta_city.jpg', 'tta_city2.jpg'];
+        const bg = backgrounds[Math.floor(Math.random() * backgrounds.length)];
+        document.getElementById('bg').style.backgroundImage =
+            `linear-gradient(rgba(25, 25, 35, 0.4), rgba(25, 25, 35, 0.4)), url('../assets/${bg}')`;
+    </script>
+</body>
+</html>

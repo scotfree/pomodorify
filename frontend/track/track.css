@@ -580,7 +580,7 @@ select.end-first {
         flex-wrap: wrap;
     }
 
-    #task-row #project-select {
+    #task-row #project-select-combo {
         flex-basis: 100%;
     }
 
@@ -643,4 +643,95 @@ select.end-first {
 
 #playlist-screen > .inline-row {
     margin-bottom: 1rem;
+}
+
+/* --- Type-to-filter dropdowns (combo.js) --- */
+
+.combo-native {
+    display: none !important;
+}
+
+.combo {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+}
+
+.combo-input {
+    width: 100%;
+    max-width: none;
+    box-sizing: border-box;
+    padding-right: 2rem;
+    cursor: pointer;
+    text-overflow: ellipsis;
+}
+
+/* The ▾ a select would show, also while typing (style.css's input:focus
+   resets the background). */
+.combo-input,
+.combo-input:focus {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5 6 6.5 11 1.5' fill='none' stroke='%23e6e6fa' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.75rem center;
+    background-size: 0.75rem 0.5rem;
+}
+
+.combo-input:focus {
+    cursor: text;
+}
+
+/* Long names show their end when not being typed in (like select.end-first). */
+.combo-input.end-first:not(:focus) {
+    direction: rtl;
+}
+
+.combo-list {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    z-index: 20;
+    min-width: 100%;
+    width: max-content;
+    max-width: min(36rem, calc(100vw - 16px));
+    max-height: 18rem;
+    overflow-y: auto;
+    box-sizing: border-box;
+    text-align: left;
+    background: rgb(25, 25, 35);
+    border: 2px solid #8b008b;
+    border-radius: 8px;
+    box-shadow: 0 0 20px rgba(139, 0, 139, 0.6);
+}
+
+.combo-option,
+.combo-none {
+    padding: 0.5rem 0.75rem;
+    font-size: 0.9rem;
+}
+
+.combo-option {
+    cursor: pointer;
+}
+
+.combo-option.active {
+    background: rgba(139, 0, 139, 0.45);
+}
+
+.combo-option[aria-selected="true"] {
+    font-weight: 700;
+}
+
+.combo-option[aria-disabled="true"],
+.combo-none {
+    opacity: 0.55;
+    cursor: default;
+}
+
+.combo-group {
+    padding: 0.5rem 0.75rem 0.25rem;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    opacity: 0.7;
 }

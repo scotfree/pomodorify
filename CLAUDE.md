@@ -14,6 +14,8 @@ Pomodorify is a pure client-side static web app. No build step, no package manag
 
 Deployed at `https://pomodorifi.es`.
 
+**`storymode/` is a separate project** (Story Mode, a voice choose-your-own-adventure app) living here temporarily until it gets its own repo. It shares nothing with Pomodorify, isn't deployed (the deploy only syncs `frontend/`), and has its own README, CLAUDE.md and tests (`node storymode/tests/run.mjs`).
+
 ## CRITICAL: keep the two apps separate
 
 - **The track app never edits shared files.** It only reads `../utils.js`, `../style.css` and `../assets/`. New logic goes in `frontend/track/`, even if it duplicates the root app. The root app and its deployment are meant to stay unchanged while `/track` matures.

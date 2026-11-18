@@ -37,6 +37,7 @@ import { filterTracks, rejection, searchQuery, describeSearchOptions, describeSh
 import { buildPlaylist, parseLines, fetchSpotifyTitle, FILLER_QUERY } from './build.js';
 import { parseLabels, fetchIssueLabels, formatLabelCounts } from './labels.js';
 import { enhanceSelect } from './combo.js';
+import { createKeepAwake } from './keep-awake.js';
 
 const REPLAY_ORDER_KEY = 'track_replay_order';
 
@@ -74,6 +75,7 @@ const auth = createAuth({ clientId: CLIENT_ID, redirectUri: REDIRECT_URI });
 const api = createSpotifyApi(auth.getToken);
 const playback = createSpotifyPlayback({ getToken: auth.getToken, name: 'Pomodorify' });
 const playlists = createPlaylistStore();
+const keepAwake = createKeepAwake();
 const logger = createLocalLogger();
 
 const CREATED_LABEL = { name: 'pomodorify created', color: 'e4572e', description: 'Created from Pomodorify' };
@@ -1017,6 +1019,36 @@ function renderControls() {
         button.title = playing ? 'Pause' : 'Resume';
         button.setAttribute('aria-label', button.title);
     }
+    if (mediaSession) mediaSession.playbackState = isRunning() ? (playing ? 'playing' : 'paused') : 'none';
+}
+
+// --- system media controls (media keys, Now Playing, headphones) ---
+
+const mediaSession = 'mediaSession' in navigator ? navigator.mediaSession : null;
+
+function setUpMediaSession() {
+    if (!mediaSession) return;
+    const handlers = {
+        play: () => { if (!playing) control('toggle'); },
+        pause: () => { if (playing) control('toggle'); },
+        nexttrack: () => control('next'),
+        previoustrack: () => control('prev'),
+        stop: () => control('stop'),
+    };
+    for (const [action, handler] of Object.entries(handlers)) {
+        try {
+            mediaSession.setActionHandler(action, handler);
+        } catch {
+            // Not every browser supports every action.
+        }
+    }
+}
+
+function showNowPlaying(track) {
+    if (!mediaSession || typeof MediaMetadata === 'undefined') return;
+    mediaSession.metadata = track
+        ? new MediaMetadata({ title: track.name, artist: track.artist, album: sessionLabel || 'Pomodorify', artwork: [{ src: 'icons/tomato.png', sizes: '192x192', type: 'image/png' }] })
+        : null;
 }
 
 function control(action) {
@@ -1072,6 +1104,9 @@ function startSession(playlistId) {
         alert('Failed to start playback. Please try again.');
         endSession();
     });
+    // Also in this click: keeps Safari from pausing the page between tracks
+    // when it's in the background (see keep-awake.js).
+    keepAwake.start();
     // After play(), so nothing is awaited before it. Readies a one-write log for pagehide.
     if (target.issue) githubLogger.prepare(target.issue.id).catch(console.error);
     if (sessionLabels === null) {
@@ -1117,6 +1152,7 @@ function onPlaybackChange(change) {
         const track = sessionTracks[change.trackIndex];
         for (const id of ['session-track-name', 'now-track-name']) $(id).textContent = track.name;
         for (const id of ['session-track-artist', 'now-track-artist']) $(id).textContent = track.artist;
+        showNowPlaying(track);
         if (viewedId === runningId) renderPlaylistScreen();
     }
 
@@ -1146,6 +1182,9 @@ function endSession() {
     const hours = finishSession();
     clearInterval(ticker);
     ticker = null;
+    keepAwake.stop();
+    showNowPlaying(null);
+    renderControls();
 
     $('running-info').hidden = true;
     $('session-done').hidden = false;
@@ -1309,6 +1348,7 @@ function wireEvents() {
 async function boot() {
     setRandomBackground();
     buildControls();
+    setUpMediaSession();
     // Type to filter: there can be a lot of projects, repos and issues.
     enhanceSelect($('project-select'));
     enhanceSelect($('issue-select'));

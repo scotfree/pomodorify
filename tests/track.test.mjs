@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { filterItems } from '../frontend/track/combo.js';
+import { quietWav, createKeepAwake } from '../frontend/track/keep-awake.js';
 import { createLocalLogger } from '../frontend/track/loggers/local.js';
 import { createSessionClock, createSession, formatClock, remainingMs } from '../frontend/track/session.js';
 import { createAuth, hasScopes, SCOPES, STORAGE_KEYS } from '../frontend/track/auth.js';
@@ -628,6 +629,49 @@ test('filterItems: every typed word must appear, any order and case, group names
     assert.deepEqual(pick('projects atlas'), ['d']);
     assert.deepEqual(pick('#19'), ['c']);
     assert.deepEqual(pick('nothing here'), []);
+});
+
+console.log('\nkeep awake');
+
+test('quietWav is a valid mono 16-bit WAV, inaudible but not digital silence', () => {
+    const bytes = quietWav(1, 8000);
+    const view = new DataView(bytes.buffer);
+    const text = (o, n) => String.fromCharCode(...bytes.slice(o, o + n));
+    assert.equal(text(0, 4), 'RIFF');
+    assert.equal(text(8, 4), 'WAVE');
+    assert.equal(text(36, 4), 'data');
+    assert.equal(view.getUint16(22, true), 1);      // mono
+    assert.equal(view.getUint32(24, true), 8000);   // sample rate
+    assert.equal(view.getUint16(34, true), 16);     // bits
+    assert.equal(view.getUint32(40, true), 16000);  // 8000 samples x 2 bytes
+    assert.equal(bytes.length, 44 + 16000);
+    let peak = 0;
+    for (let i = 0; i < 8000; i++) peak = Math.max(peak, Math.abs(view.getInt16(44 + i * 2, true)));
+    assert.ok(peak > 0 && peak <= 3, `peak ${peak}`);
+});
+
+test('keep-awake loops one audio element from start until stop', () => {
+    const made = [];
+    const fake = () => {
+        const a = { paused: true, loop: false, currentTime: 5, plays: 0,
+            play() { this.paused = false; this.plays++; return Promise.resolve(); },
+            pause() { this.paused = true; } };
+        made.push(a);
+        return a;
+    };
+    const keep = createKeepAwake({ createAudio: fake, makeUrl: () => 'blob:quiet' });
+    assert.equal(keep.isRunning(), false);
+    keep.start();
+    assert.equal(made.length, 1);
+    assert.equal(made[0].src, 'blob:quiet');
+    assert.equal(made[0].loop, true);
+    assert.equal(made[0].currentTime, 0);
+    assert.equal(keep.isRunning(), true);
+    keep.stop();
+    assert.equal(keep.isRunning(), false);
+    keep.start();
+    assert.equal(made.length, 1);  // reused for the next session
+    assert.equal(made[0].plays, 2);
 });
 
 // --- session display helpers ---

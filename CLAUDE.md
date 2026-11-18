@@ -85,6 +85,7 @@ The UI matches Spotless's (same panels, playlist screen, popups, Now playing), a
 - `session.js`: the session clock (only counts while playing; repeat calls are harmless) and `createSession().finish()`, which logs once whether it's called by Stop, playlist end or `pagehide`. Also the time-left and clock display helpers.
 - `playback/spotify.js`: the Web Playback SDK adapter, with `next()` / `previous()` (the SDK's own; skipping past the last track reads as the end). `playback/spotify-state.js`: pure state interpretation and end detection.
 - `loggers/local.js`: `pomodorify_hours` totals. `export.js`: CSV/JSON formatting. `labels.js`: label counts per playlist.
+- `keep-awake.js`: a looping, inaudible (~-80 dB) WAV started in the START click and stopped when the session ends. Safari pauses JavaScript in hidden pages unless they're playing audio; the Spotify player's iframe only plays during tracks, so in the gap between tracks Safari paused the page (and the SDK's code that starts the next track) until it was visible again. The clip keeps the page "playing" across those gaps. The Media Session API (media keys, Now Playing) drives the same controls as the on-screen buttons.
 - `github/`: `api.js` (GraphQL), `hours-target.js` (which field gets the hours), `settings.js` (token, field names), `picker.js`. `loggers/github.js`: read-add-write with a pending retry queue.
 
 ### Spotless app (`frontend/spotless/`)
